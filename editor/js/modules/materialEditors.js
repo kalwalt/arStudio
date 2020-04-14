@@ -16,11 +16,11 @@ EditorModule.showMaterialNodeInfo = function( node, inspector )
 	var buttons = "<span class='buttons'><img class='options_section' src='imgs/mini-cog.png'></span>";
 	var section = inspector.addSection(icon + " " + title + buttons, options);
 
-	section.querySelector(".wsectiontitle").addEventListener("contextmenu", (function(e) { 
+	section.querySelector(".wsectiontitle").addEventListener("contextmenu", (function(e) {
 		if(e.button != 2) //right button
 			return false;
 		inner_showActions(e);
-		e.preventDefault(); 
+		e.preventDefault();
 		return false;
 	}).bind(this));
 
@@ -51,8 +51,8 @@ EditorModule.showMaterialNodeInfo = function( node, inspector )
 	{
 		if(!node.material && node.constructor == LS.SceneNode )
 		{
-			inspector.addButton(null,"Create Material", { callback: function(v) { 
-				EditorModule.showAddMaterialToNode( node, function( mat ){ 
+			inspector.addButton(null,"Create Material", { callback: function(v) {
+				EditorModule.showAddMaterialToNode( node, function( mat ){
 					inspector.refresh();
 				});
 			}});
@@ -62,7 +62,7 @@ EditorModule.showMaterialNodeInfo = function( node, inspector )
 
 	var material = node.getMaterial();
 
-	if(!material) 
+	if(!material)
 	{
 		if( LS.ResourcesManager.isLoading( node.material ) )
 		{
@@ -75,13 +75,13 @@ EditorModule.showMaterialNodeInfo = function( node, inspector )
 	}
 
 	//mark material as changed
-	LiteGUI.bind( section, "wchange", function(e) { 
+	LiteGUI.bind( section, "wchange", function(e) {
 		if(!material)
 			return;
 		var fullpath = material.fullpath || material.filename;
 		if(!fullpath)
 			return;
-		LS.ResourcesManager.resourceModified( material );				
+		LS.ResourcesManager.resourceModified( material );
 	});
 
 
@@ -89,14 +89,14 @@ EditorModule.showMaterialNodeInfo = function( node, inspector )
 	var mat_type = LS.getObjectClassName( material );
 
 	var icon = section.querySelector(".icon");
-	icon.addEventListener("dragstart", function(event) { 
+	icon.addEventListener("dragstart", function(event) {
 		event.dataTransfer.setData("uid", material.uid);
 		event.dataTransfer.setData("type", "Material");
 		event.dataTransfer.setData("node_uid", node.uid);
 		event.dataTransfer.setData("class", mat_type );
 	});
 
-	LiteGUI.bind( inspector.current_section, "wchange", function(e) { 
+	LiteGUI.bind( inspector.current_section, "wchange", function(e) {
 		if(material.remotepath)
 			LS.RM.resourceModified( material );
 		CORE.userAction( "material_changed", material );
@@ -110,11 +110,11 @@ EditorModule.showMaterialNodeInfo = function( node, inspector )
 			DriveModule.saveResource( material, function(){
 				DriveModule.onUpdatePreview(material);
 			});
-		}});	
+		}});
 
 	if(!node._show_mat)
 	{
-		inspector.addButtons(null, ["See Properties"], { skip_wchange: true, callback: function(v) { 
+		inspector.addButtons(null, ["See Properties"], { skip_wchange: true, callback: function(v) {
 			if(v == "See Properties")
 				node._show_mat = true;
 			else
@@ -128,7 +128,7 @@ EditorModule.showMaterialNodeInfo = function( node, inspector )
 	var name = LS.getObjectClassName( material );
 	var mat_class = material.constructor;
 
-	inspector.addButton(null, "Hide Editor", { skip_wchange: true, callback: function(v) { 
+	inspector.addButton(null, "Hide Editor", { skip_wchange: true, callback: function(v) {
 		node._show_mat = false;
 		inspector.refresh();
 	}});
@@ -201,7 +201,7 @@ EditorModule.showMaterialNodeInfo = function( node, inspector )
 			if(!material)
 				return;
 			CORE.userAction("node_material_assigned", node, null );
-			node.material = null; 
+			node.material = null;
 			CORE.afterUserAction("node_material_assigned", node, null );
 			inspector.refresh();
 		}
@@ -291,7 +291,7 @@ EditorModule.showMaterialProperties = function( material, inspector, node, force
 	if(can_be_locked)
 		inspector.addButtons(null,["Save changes","Lock"],function(v){
 
-			LS.ResourcesManager.resourceModified( material );				
+			LS.ResourcesManager.resourceModified( material );
 
 			if(v == "Save changes")
 				DriveModule.saveResource( material );
@@ -339,19 +339,19 @@ EditorModule.showMaterialProperties = function( material, inspector, node, force
 
 LS.Material["@inspector"] = function( material, inspector )
 {
-	inspector.addCombo("Shader", material.shader_name || "default", { values: LS.Material.available_shaders, callback: function(v) { 
+	inspector.addCombo("Shader", material.shader_name || "default", { values: LS.Material.available_shaders, callback: function(v) {
 		if(!material) return;
 
 		if(v != "default")
-			material.shader_name = v; 
+			material.shader_name = v;
 		else
 			material.shader_name = null;
 	}});
 
 	inspector.addTitle("Properties");
 	inspector.addColor("Color", material.color, { pretitle: AnimationModule.getKeyframeCode( material, "color" ), callback: function(color) { material.color.set(color); } });
-	inspector.addSlider("Opacity", material.opacity, { pretitle: AnimationModule.getKeyframeCode( material, "opacity" ), min: 0, max: 1, step:0.01, callback: function (value) { 
-		material.opacity = value; 
+	inspector.addSlider("Opacity", material.opacity, { pretitle: AnimationModule.getKeyframeCode( material, "opacity" ), min: 0, max: 1, step:0.01, callback: function (value) {
+		material.opacity = value;
 		/*
 		if(material.opacity < 1 && material.blend_mode == LS.Blend.NORMAL)
 			material.blend_mode = LS.Blend.ALPHA;
@@ -396,7 +396,7 @@ LS.Material["@inspector"] = function( material, inspector )
 					material.setTexture(this.options["channel"], filename);
 
 				LS.GlobalScene.refresh();
-			},callback_button: function(filename) { 
+			},callback_button: function(filename) {
 				EditorModule.showTextureSamplerInfo( material, this.options.channel );
 			}});
 		}
@@ -411,8 +411,8 @@ LS.MaterialClasses.StandardMaterial["@inspector"] = function( material, inspecto
 {
 	inspector.addTitle("Properties");
 	inspector.widgets_per_row = 2;
-	inspector.addSlider("Opacity", material.opacity, { pretitle: AnimationModule.getKeyframeCode( material, "opacity" ), min: 0, max: 1, step:0.01, callback: function (value) { 
-		material.opacity = value; 
+	inspector.addSlider("Opacity", material.opacity, { pretitle: AnimationModule.getKeyframeCode( material, "opacity" ), min: 0, max: 1, step:0.01, callback: function (value) {
+		material.opacity = value;
 		if(material.opacity < 1 && material.blend_mode == LS.Blend.NORMAL)
 			material.blend_mode = LS.Blend.ALPHA;
 		if(material.opacity >= 1 && material.blend_mode == LS.Blend.ALPHA)
@@ -447,8 +447,8 @@ LS.MaterialClasses.StandardMaterial["@inspector"] = function( material, inspecto
 	inspector.addCheckbox("Reflec. gloss", material.reflection_gloss, { callback: function (value) { material.reflection_gloss = value; }});
 
 	inspector.widgets_per_row = 1;
-	inspector.addColor("Emissive", material.emissive, { pretitle: AnimationModule.getKeyframeCode( material, "emissive" ), callback: function(color) { 
-		vec3.copy(material.emissive, color); 
+	inspector.addColor("Emissive", material.emissive, { pretitle: AnimationModule.getKeyframeCode( material, "emissive" ), callback: function(color) {
+		vec3.copy(material.emissive, color);
 	}});
 
 	inspector.addSlider("Normalmap factor", material.normalmap_factor, { pretitle: AnimationModule.getKeyframeCode( material, "normalmap_factor" ), min: 0, step:0.01, max:1.5, callback: function (value) { material.normalmap_factor = value; } });
@@ -467,7 +467,7 @@ LS.MaterialClasses.StandardMaterial["@inspector"] = function( material, inspecto
 	inspector.beginGroup("Textures",{title:true});
 
 	var texture_channels = material.getTextureChannels();
-	
+
 	for(var i in texture_channels)
 	{
 		var channel = texture_channels[i];
@@ -509,7 +509,7 @@ LS.Material.showFlagsEditor = function( material )
 
 //EditorModule.registerMaterialEditor("Material", EditorModule.showGlobalMaterialInfo );
 
-//Used in SurfaceMaterial 
+//Used in SurfaceMaterial
 LS.MaterialClasses.SurfaceMaterial["@inspector"] = function( material, inspector )
 {
 	inspector.addTitle("Properties");
@@ -527,10 +527,10 @@ LS.MaterialClasses.SurfaceMaterial["@inspector"] = function( material, inspector
 
 	inspector.addTextureSampler("Environment", material.textures["environment"], { callback: function(v) { material.textures["environment"] = v; } });
 
-	inspector.addButtons(null,["Add Property","Edit"], { callback: function(v) { 
+	inspector.addButtons(null,["Add Property","Edit"], { callback: function(v) {
 		if(v == "Add Property")
 			EditorModule.showAddPropertyDialog(inner_on_newproperty, ["number","vec2","vec3","vec4","color","texture","cubemap","sampler"] );
-		else 
+		else
 			EditorModule.showEditPropertiesDialog( material.properties, ["number","vec2","vec3","vec4","color","texture","cubemap","sampler"], inner_on_editproperties, "#visor" );
 	}});
 
@@ -543,7 +543,7 @@ LS.MaterialClasses.SurfaceMaterial["@inspector"] = function( material, inspector
 		var codepad = new CodingPadWidget();
 		coding_container.appendChild( codepad.root );
 		codepad.editInstanceCode( material, { id: material.uid, title: "Shader", lang:"glsl", help: material.constructor.coding_help } );
-		codepad.top_widgets.addButton(null,"In Editor",{ callback: function(v) { 
+		codepad.top_widgets.addButton(null,"In Editor",{ callback: function(v) {
 			material._view_shader_code = !material._view_shader_code;
 			inspector.refresh();
 			CodingModule.openTab();
@@ -551,7 +551,7 @@ LS.MaterialClasses.SurfaceMaterial["@inspector"] = function( material, inspector
 		}});
 	}
 
-	inspector.addButton("", !material._view_shader_code ? "Edit Shader" : "Hide Shader", { callback: function() { 
+	inspector.addButton("", !material._view_shader_code ? "Edit Shader" : "Hide Shader", { callback: function() {
 		material._view_shader_code = !material._view_shader_code;
 		inspector.refresh();
 		//CodingModule.openTab();
@@ -559,7 +559,7 @@ LS.MaterialClasses.SurfaceMaterial["@inspector"] = function( material, inspector
 	}});
 	*/
 
-	inspector.addButton("Shader", "Edit Shader", { callback: function() { 
+	inspector.addButton("Shader", "Edit Shader", { callback: function() {
 		CodingModule.editInstanceCode( material, { id: material.uid, title: "Shader", lang:"glsl", help: material.constructor.coding_help }, true );
 	}});
 
@@ -576,7 +576,7 @@ LS.MaterialClasses.SurfaceMaterial["@inspector"] = function( material, inspector
 		{
 			LiteGUI.alert("There is already a property with that name.");
 			return;
-		}			
+		}
 		else
 			material[ p.name ] = p.value;
 
@@ -589,20 +589,20 @@ LS.MaterialClasses.SurfaceMaterial["@inspector"] = function( material, inspector
 			material.textures[ p.name ] = p.value;
 		else
 		{
-			if( material[ p.name ] && material[ p.name ].set) 
+			if( material[ p.name ] && material[ p.name ].set)
 				material[ p.name ].set( p.value );
 			else
 				material[ p.name ] = p.value;
 		}
 		inspector.refresh();
-		
+
 		/*
 		material.properties.push(p);
 		if(p.type == "texture" || p.type == "cubemap")
 			material.textures[p.name] = p.value;
 		EditorModule.refreshAttributes();
 		*/
-	}	
+	}
 
 	function inner_on_property_change(v)
 	{
@@ -647,10 +647,12 @@ LS.MaterialClasses.ShaderMaterial["@inspector"] = function( material, inspector,
 {
 	inspector.addTitle("Properties");
 
-	inspector.addShader("shader", material.shader, { pretitle: AnimationModule.getKeyframeCode( material, "shader" ), 
-		callback: function(v) { 
-			material.shader = v; 
+	inspector.addShader("shader", material.shader, { pretitle: AnimationModule.getKeyframeCode( material, "shader" ),
+		callback: function(v) {
+			UndoModule.saveMaterialChangeUndo(material);
+			material.shader = v;
 			inspector.refresh();
+			LS.GlobalScene.requestFrame();
 		}, callback_refresh: function(){
 			material.processShaderCode();
 		}
@@ -660,7 +662,7 @@ LS.MaterialClasses.ShaderMaterial["@inspector"] = function( material, inspector,
 
 	if( !material._shader )
 		return;
-	
+
 	if( !LS.RM.resources[ material._shader ] )
 		inspector.addInfo(null,"Shader not loaded");
 	else
@@ -678,7 +680,11 @@ LS.MaterialClasses.ShaderMaterial["@inspector"] = function( material, inspector,
 			var widget_type = p.widget || p.type;
 			if(widget_type == "Sampler2D")
 				widget_type = "sampler";
-			inspector.add( widget_type, p.label || p.name, p.value, { pretitle: AnimationModule.getKeyframeCode( material, p.name ), title: p.name, step: p.step, precision: p.precision, values: p.values, property: p, callback: inner_on_property_change });
+			var options = { pretitle: AnimationModule.getKeyframeCode( material, p.name ), title: p.name, step: p.step, precision: p.precision, values: p.values, property: p, callback: inner_on_property_change };
+			for(var i in p)
+				if(options[i] == null)
+					options[i] = p[i];
+			inspector.add( widget_type, p.label || p.name, p.value, options);
 		}
 	}
 
@@ -700,7 +706,7 @@ LS.MaterialClasses.ShaderMaterial["@inspector"] = function( material, inspector,
 EditorModule.showTextureSamplerInfo = function( sampler, options )
 {
 	options = options || {};
-	
+
 	if(!sampler)
 		sampler = {};
 
@@ -801,20 +807,20 @@ EditorModule.showTextureSamplerInfo = function( sampler, options )
 		}});
 
 		var m = material.uvs_matrix;
-		widgets.addVector2("Tiling", [m[0],m[4]], { step:0.001, callback: function (value) { 
+		widgets.addVector2("Tiling", [m[0],m[4]], { step:0.001, callback: function (value) {
 			material.uvs_matrix[0] = value[0]; material.uvs_matrix[4] = value[1];
 		}});
-		widgets.addVector2("Offset", [m[6],m[7]], { step:0.001, callback: function (value) { 
+		widgets.addVector2("Offset", [m[6],m[7]], { step:0.001, callback: function (value) {
 			material.uvs_matrix[6] = value[0]; material.uvs_matrix[7] = value[1];
 		}});
 	}
 
-	dialog.addButton( "Clear", { className: "big", callback: function(v) { 
+	dialog.addButton( "Clear", { className: "big", callback: function(v) {
 		if(options.callback)
 			options.callback( null );
 	}});
 
-	dialog.addButton( "Close", { className: "big", callback: function(v) { 
+	dialog.addButton( "Close", { className: "big", callback: function(v) {
 		dialog.close();
 	}});
 
@@ -823,4 +829,3 @@ EditorModule.showTextureSamplerInfo = function( sampler, options )
 	dialog.adjustSize(30);
 	//widgets.addString("Name", last_file ? last_file.name : "");
 }
-

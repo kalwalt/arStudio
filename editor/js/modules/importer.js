@@ -6,7 +6,7 @@
 var ImporterModule  = {
 
 	name: "importer",
-	
+
 	//this are saved between sessions
 	preferences: {
 		optimize_data: true,
@@ -46,7 +46,7 @@ var ImporterModule  = {
 
 		var that = this;
 
-		widgets.addCheckbox("Force lowercase", this.preferences.force_lowercase, function(v){ 
+		widgets.addCheckbox("Force lowercase", this.preferences.force_lowercase, function(v){
 			ImporterModule.preferences.force_lowercase = v;
 		});
 	},
@@ -75,7 +75,7 @@ var ImporterModule  = {
 			ImporterModule.loadFileToMemory( file, ImporterModule.showImportResourceDialog.bind( ImporterModule ) );
 	},
 
-	// Launched when something is drag&drop inside the canvas (could be files, links, or elements of the interface) 
+	// Launched when something is drag&drop inside the canvas (could be files, links, or elements of the interface)
 	onItemDrop: function (evt, options)
 	{
 		var that = this;
@@ -236,7 +236,7 @@ var ImporterModule  = {
 		}
 	},
 
-	//just guesses the type and loads it into memory (reads the bytes, not processing) 
+	//just guesses the type and loads it into memory (reads the bytes, not processing)
 	loadFileToMemory: function(file, callback, options)
 	{
 		if(!file)
@@ -303,7 +303,7 @@ var ImporterModule  = {
 	{
 		var result = [];
 		Array.prototype.push.apply(result,files); //convert to regular array
-		result = result.sort( function(a,b) { 
+		result = result.sort( function(a,b) {
 			if(is_image(a))
 				return a;
 			if(is_image(b))
@@ -360,7 +360,7 @@ var ImporterModule  = {
 				inspector.refresh();
 			}
 			return true;
-		}, 
+		},
 		function(e){
 			//onenter
 
@@ -382,11 +382,11 @@ var ImporterModule  = {
 			{
 				var filename = DriveModule.getFilename(v);
 				file = { name: filename, size: 0, type: "?", data: null };
-				var request = { 
+				var request = {
 					url: LS.RM.getFullURL( v ),
-					success: function( data, response) { 
+					success: function( data, response) {
 						inner_setContent( data, this.getResponseHeader("Content-Type") );
-					} 
+					}
 				};
 
 				var info = LS.Formats.getFileFormatInfo( file.name );
@@ -468,7 +468,7 @@ var ImporterModule  = {
 				if( ext === "zip" )
 					inspector.addInfo("ZIP FILE");
 
-				inspector.addCheckbox("Optimize data", import_options.optimize_data, { callback: function(v) { 
+				inspector.addCheckbox("Optimize data", import_options.optimize_data, { callback: function(v) {
 					import_options.optimize_data = v;
 					ImporterModule.preferences.optimize_data = v;
 				}});
@@ -481,7 +481,7 @@ var ImporterModule  = {
 				else if(info.resource == "Mesh" )
 				{
 					inspector.addTitle("Mesh");
-					inspector.addCombo("Action", ImporterModule.preferences.mesh_action, { values: {"Load in memory":"load","Insert in Origin":"origin","Insert in intersection":"plane","Replace Mesh":"replace"}, callback: function(v) { 
+					inspector.addCombo("Action", ImporterModule.preferences.mesh_action, { values: {"Load in memory":"load","Insert in Origin":"origin","Insert in intersection":"plane","Replace Mesh":"replace"}, callback: function(v) {
 						ImporterModule.preferences.mesh_action = v;
 					}});
 					//inspector.addCheckbox("Insert into scene", insert_into, { callback: function(v) { insert_into = v; }});
@@ -489,7 +489,7 @@ var ImporterModule  = {
 				else if(info.resource == "Texture" )
 				{
 					inspector.addTitle("Texture");
-					inspector.addCombo("Action", ImporterModule.preferences.texture_action, { values: {"Load in memory":"load","Replace in material":"replace","Insert as Plane":"plane","Insert as Sprite":"sprite"}, callback: function(v) { 
+					inspector.addCombo("Action", ImporterModule.preferences.texture_action, { values: {"Load in memory":"load","Replace in material":"replace","Insert as Plane":"plane","Insert as Sprite":"sprite"}, callback: function(v) {
 						ImporterModule.preferences.texture_action = v;
 					}});
 
@@ -500,7 +500,7 @@ var ImporterModule  = {
 						{
 							var channels = material.getTextureChannels();
 							target = channels[0];
-							inspector.addCombo("Channel", target, { values: channels, callback: function(v) { 
+							inspector.addCombo("Channel", target, { values: channels, callback: function(v) {
 								target = v;
 							}});
 						}
@@ -529,7 +529,7 @@ var ImporterModule  = {
 				return LiteGUI.alert("No file imported");
 
 			filename = inspector.getValue("Filename");
-			filename = filename.replace(/ /g,"_"); //no spaces in names			
+			filename = filename.replace(/ /g,"_"); //no spaces in names
 
 			for(var i in options)
 				import_options[i] = options[i];
@@ -591,7 +591,7 @@ var ImporterModule  = {
 	// This function wraps the processResource from LS.ResourcesManager to add some extra behaviours
 	// Mostly conversions, optimizations, and so
 	processResource: function ( name, file, options, on_complete )
-	{ 
+	{
 		options = options || {};
 
 		if(!file.data)
@@ -639,25 +639,28 @@ var ImporterModule  = {
 					filename = filename + ".wbin";
 					LS.ResourcesManager.renameResource( resource.filename, filename );
 				}
-				if( resource.constructor == GL.Texture && (!format || !format["native"]) )
+				if( resource.constructor == GL.Texture )
 				{
-					resource._original_data = null;
-					var blob = resource.toBlob(true);
-					var reader = new FileReader();
-					reader.onload = function() {
-						resource._original_data = this.result;
-					};
-					reader.readAsArrayBuffer( blob );
+					if( !format || ( !format["native"] && !format["skip_conversion"]) )
+					{
+						resource._original_data = null;
+						var blob = resource.toBlob(true);
+						var reader = new FileReader();
+						reader.onload = function() {
+							resource._original_data = this.result;
+						};
+						reader.readAsArrayBuffer( blob );
 
-					filename = filename + ".png";
-					LS.ResourcesManager.renameResource( resource.filename, filename );
+						filename = filename + ".png";
+						LS.ResourcesManager.renameResource( resource.filename, filename );
+					}
 				}
 			}
 
 			//remove original file if the extension has changed
-			var file_extension = LS.RM.getExtension( file.filename );
+			var file_extension = LS.RM.getExtension( filename );
 			var res_extension = LS.RM.getExtension( resource.fullpath || resource.filename );
-			if( file_extension != res_extension )
+			if( file_extension != res_extension ) //remove original data
 			{
 				resource._original_file = null;
 				resource._original_data = null;
@@ -676,7 +679,7 @@ var ImporterModule  = {
 			}
 
 
-			//scenes require to rename some stuff 
+			//scenes require to rename some stuff
 			if(resource.constructor === LS.Scene || resource.constructor === LS.SceneNode )
 			{
 				//remove node root, dragging to canvas should add to scene.root

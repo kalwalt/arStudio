@@ -109,13 +109,13 @@ var AnimationModule = {
 
 		var that = this;
 		var dialog = new LiteGUI.Dialog("property_info",{ title:"Property Info", width: 400, draggable: true, closable: true });
-		
+
 		var widgets = new LiteGUI.Inspector();
 		var locator_widget = widgets.addString("Locator", property, function(v){});
 		/*
 		locator_widget.style.cursor = "pointer";
 		locator_widget.setAttribute("draggable","true");
-		locator_widget.addEventListener("dragstart", function(event) { 
+		locator_widget.addEventListener("dragstart", function(event) {
 			event.dataTransfer.setData("locator", property );
 			event.dataTransfer.setData("type", "property");
 			if(info.node)
@@ -123,7 +123,7 @@ var AnimationModule = {
 			//event.preventDefault();
 		});
 		*/
-		
+
 		widgets.addString("Short Locator", LSQ.shortify( property ), function(v){});
 
 		widgets.widgets_per_row = 2;
@@ -209,7 +209,7 @@ var AnimationModule = {
 				widgets1.refresh();
 				widgets2.refresh();
 			}});
-			widgets.addButtons( null, ["Clone","Copy","Paste","Delete"], function(v){
+			widgets.addButtons( null, ["Clone","Copy","Paste","Delete","Clear"], function(v){
 				if(v == "Clone")
 				{
 					var data = selected_take.serialize();
@@ -232,6 +232,16 @@ var AnimationModule = {
 					data._object_class = "LS.Animation.Take";
 					if( selected_take )
 						LiteGUI.toClipboard( data, true );
+				}
+				else if(v == "Clear")
+				{
+					that.addUndoAnimationEdited( animation, timeline );
+					if(selected_take)
+						selected_take.clear();
+					that.animationModified( animation, timeline );
+					widgets2.refresh();
+					if(timeline)
+						timeline.redrawCanvas();
 				}
 				else if(v == "Paste")
 				{
@@ -317,7 +327,7 @@ var AnimationModule = {
 
 			action = action || values[0];
 			widgets.addCombo("Actions", action, { values: values, width: "80%", callback: function(v){
-				action = v;	
+				action = v;
 			}});
 
 			widgets.addButton(null,"Go",{ width: "20%", callback: function(){
@@ -354,7 +364,7 @@ var AnimationModule = {
 			widgets.widgets_per_row = 2;
 			var interpolation = Timeline.interpolation_values["linear"];
 			widgets.addCombo("Set Interpolation to all tracks", interpolation, { values: Timeline.interpolation_values, width: "80%", callback: function(v){
-				interpolation = v;	
+				interpolation = v;
 			}});
 
 			widgets.addButton(null,"Go",{ width: "20%", callback: function(){
@@ -409,7 +419,7 @@ var AnimationModule = {
 				LiteGUI.downloadFile( selected_take.name + "." + export_selection, data, data.constructor === String ? "text/plain" : "application/octet-stream" );
 			}});
 			widgets.widgets_per_row = 1;
-			
+
 			dialog.adjustSize(10);
 		}
 
@@ -447,7 +457,7 @@ var AnimationModule = {
 
 		var that = this;
 
-		UndoModule.addUndoStep({ 
+		UndoModule.addUndoStep({
 			title: "Animation modified: " + animation.name,
 			data: { animation_name: animation.name, data: animation.serialize() },
 			callback_undo: function(d) {
@@ -733,7 +743,7 @@ var AnimationModule = {
 			widgets.clear();
 			widgets.addTitle("Animation");
 			widgets.widgets_per_row = 2;
-			widgets.addString("Animation", anim ? anim.filename : "", { name_width: 80, width: "calc( 100% - 80px )", callback: function(v){ 
+			widgets.addString("Animation", anim ? anim.filename : "", { name_width: 80, width: "calc( 100% - 80px )", callback: function(v){
 				anim = LS.RM.getResource(anim);
 				if(anim)
 					take = anim.takes["default"];
@@ -749,8 +759,8 @@ var AnimationModule = {
 			widgets.addSeparator();
 			widgets.addTitle("Mesh");
 			widgets.widgets_per_row = 2;
-			widgets.addMesh("Mesh",mesh ? mesh.filename : "", { name_width: 80, width: "calc( 100% - 80px )", callback: function(v){ 
-				mesh = LS.RM.getResource(v); 
+			widgets.addMesh("Mesh",mesh ? mesh.filename : "", { name_width: 80, width: "calc( 100% - 80px )", callback: function(v){
+				mesh = LS.RM.getResource(v);
 				inner_refresh();
 			}});
 			widgets.addButton(null,"From node",{ width: 80, callback: inner_mesh_from_node });
@@ -774,7 +784,7 @@ var AnimationModule = {
 			var anim = comp.getAnimation();
 			anim_filename = LS.RM.getBasename(anim.filename);
 			inner_refresh();
-		}		
+		}
 
 		function inner_export_anim()
 		{
@@ -798,7 +808,7 @@ var AnimationModule = {
 			if(!mesh)
 				return LiteGUI.alert("No mesh found");
 			inner_refresh();
-		}		
+		}
 
 		function inner_export_mesh()
 		{
@@ -849,7 +859,7 @@ AnimationModule.export_animation_formats["anim"] = function( take ){
 
 //skeletal anim
 AnimationModule.export_animation_formats["skanim"] = exportTakeInSKANIM;
-	
+
 function exportTakeInSKANIM( take, sampling, duration ) {
 	sampling = sampling || 30; //samples per second
 	duration = duration || take.duration; //duration in seconds
@@ -922,6 +932,12 @@ function exportTakeInSKANIM( take, sampling, duration ) {
 		total_samples--;
 	}
 
+	if(total_samples <= 0)
+	{
+		time_offset = 0;
+		total_samples = 1;
+	}
+
 	//duration in seconds, samples per second, num. samples, number of bones in the skeleton
 	lines.push( [ duration.toFixed(3), sampling, total_samples, out.length ].join(",") );
 
@@ -946,7 +962,14 @@ function exportTakeInSKANIM( take, sampling, duration ) {
 			else
 				data.push( typedArrayToArray( mat4.create() ) );
 		}
-		lines.push( "K" + data.flat().join(",") );
+		var flat_data = data.flat();
+
+		//avoid ugly strings
+		for(var j = 0; j < flat_data.length; ++j)
+			if( Math.abs( flat_data[j] ) < 0.000001 )
+				flat_data[j] = 0;
+
+		lines.push( "K" + flat_data.join(",") );
 	}
 
 	return lines.join("\n");
@@ -974,7 +997,7 @@ LS.Animation.Take.prototype.matchTranslation = function( root )
 		var node = LSQ.get( track._property_path[0], root );
 		if(!node)
 			continue;
-		
+
 		var position = node.transform.position;
 		var offset = track.value_size + 1;
 
@@ -1260,7 +1283,7 @@ LS.Animation.Track.prototype.onlyRotations = (function()
 				data.set( sample, k*5+1); //overwrite inplace (because the output is less big that the input)
 			}
 		}
-		
+
 		this.data = new Float32Array( data.subarray(0,num_samples*5) );
 		return true;
 	};

@@ -134,8 +134,12 @@
                 }
             }
 
-			if( !Object.hasOwnProperty( base_class.prototype, "shape") )
+            var prev = this.registered_node_types[type];
+			if(prev)
+				console.log("replacing node type: " + type);
+			else
 			{
+				if( !Object.hasOwnProperty( base_class.prototype, "shape") )
 				Object.defineProperty(base_class.prototype, "shape", {
 					set: function(v) {
 						switch (v) {
@@ -161,13 +165,28 @@
 					get: function(v) {
 						return this._shape;
 					},
-					enumerable: true
+					enumerable: true,
+					configurable: true
 				});
-			}
 
-            var prev = this.registered_node_types[type];
-			if(prev)
-				console.log("replacing node type: " + type);
+				//warnings
+				if (base_class.prototype.onPropertyChange) {
+					console.warn(
+						"LiteGraph node class " +
+							type +
+							" has onPropertyChange method, it must be called onPropertyChanged with d at the end"
+					);
+				}
+
+				//used to know which nodes create when dragging files to the canvas
+				if (base_class.supported_extensions) {
+					for (var i in base_class.supported_extensions) {
+						var ext = base_class.supported_extensions[i];
+						if(ext && ext.constructor === String)
+							this.node_types_by_file_extension[ ext.toLowerCase() ] = base_class;
+					}
+				}
+			}
 
             this.registered_node_types[type] = base_class;
             if (base_class.constructor.name) {
@@ -179,25 +198,21 @@
             if (prev && LiteGraph.onNodeTypeReplaced) {
                 LiteGraph.onNodeTypeReplaced(type, base_class, prev);
             }
-
-            //warnings
-            if (base_class.prototype.onPropertyChange) {
-                console.warn(
-                    "LiteGraph node class " +
-                        type +
-                        " has onPropertyChange method, it must be called onPropertyChanged with d at the end"
-                );
-            }
-
-			//used to know which nodes create when dragging files to the canvas
-            if (base_class.supported_extensions) {
-                for (var i in base_class.supported_extensions) {
-                    this.node_types_by_file_extension[
-                        base_class.supported_extensions[i].toLowerCase()
-                    ] = base_class;
-                }
-            }
         },
+
+        /**
+         * removes a node type from the system
+         * @method unregisterNodeType
+         * @param {String|Object} type name of the node or the node constructor itself
+         */
+        unregisterNodeType: function(type) {
+			var base_class = type.constructor === String ? this.registered_node_types[type] : type;
+			if(!base_class)
+				throw("node type not found: " + type );
+			delete this.registered_node_types[base_class.type];
+			if(base_class.constructor.name)
+				delete this.Nodes[base_class.constructor.name];
+		},
 
         /**
          * Create a new nodetype by passing a function, it wraps it with a proper class and generates inputs according to the parameters of the function.
@@ -683,24 +698,29 @@
         interval = interval || 0;
         var that = this;
 
-        if (
-            interval == 0 &&
-            typeof window != "undefined" &&
-            window.requestAnimationFrame
-        ) {
+		//execute once per frame
+        if ( interval == 0 && typeof window != "undefined" && window.requestAnimationFrame ) {
             function on_frame() {
                 if (that.execution_timer_id != -1) {
                     return;
                 }
                 window.requestAnimationFrame(on_frame);
+				if(that.onBeforeStep)
+					that.onBeforeStep();
                 that.runStep(1, !this.catch_errors);
+				if(that.onAfterStep)
+					that.onAfterStep();
             }
             this.execution_timer_id = -1;
             on_frame();
-        } else {
+        } else { //execute every 'interval' ms
             this.execution_timer_id = setInterval(function() {
                 //execute
+				if(that.onBeforeStep)
+					that.onBeforeStep();
                 that.runStep(1, !this.catch_errors);
+				if(that.onAfterStep)
+					that.onAfterStep();
             }, interval);
         }
     };
@@ -735,7 +755,7 @@
      * Run N steps (cycles) of the graph
      * @method runStep
      * @param {number} num number of steps to run, default is 1
-     * @param {Boolean} do_not_catch_errors [optional] if you want to try/catch errors 
+     * @param {Boolean} do_not_catch_errors [optional] if you want to try/catch errors
      * @param {number} limit max number of nodes to execute (used to execute from start to a node)
      */
 
@@ -1014,7 +1034,7 @@
      * @method arrange
      */
     LGraph.prototype.arrange = function(margin) {
-        margin = margin || 40;
+        margin = margin || 100;
 
         var nodes = this.computeExecutionOrder(false, true);
         var columns = [];
@@ -1035,7 +1055,7 @@
                 continue;
             }
             var max_size = 100;
-            var y = margin;
+            var y = margin + LiteGraph.NODE_TITLE_HEIGHT;
             for (var j = 0; j < column.length; ++j) {
                 var node = column[j];
                 node.pos[0] = x;
@@ -1043,7 +1063,7 @@
                 if (node.size[0] > max_size) {
                     max_size = node.size[0];
                 }
-                y += node.size[1] + margin;
+                y += node.size[1] + margin + LiteGraph.NODE_TITLE_HEIGHT;
             }
             x += max_size + margin;
         }
@@ -1895,7 +1915,7 @@
 
         //copy all stored fields
         for (var i in data) {
-			if(i == "nodes" || i == "groups")
+			if(i == "nodes" || i == "groups" ) //links must be accepted
 				continue;
             this[i] = data[i];
         }
@@ -2038,7 +2058,7 @@
 		+ resizable: if set to false it wont be resizable with the mouse
 		+ horizontal: slots are distributed horizontally
 		+ widgets_start_y: widgets start at y distance from the top of the node
-	
+
 	flags object:
 		+ collapsed: if it is collapsed
 
@@ -2205,6 +2225,8 @@
 			for (var i = 0; i < this.widgets.length; ++i)
 			{
 				var w = this.widgets[i];
+				if(!w)
+					continue;
 				if(w.options && w.options.property && this.properties[ w.options.property ])
 					w.value = JSON.parse( JSON.stringify( this.properties[ w.options.property ] ) );
 			}
@@ -2267,7 +2289,10 @@
         if (this.widgets && this.serialize_widgets) {
             o.widgets_values = [];
             for (var i = 0; i < this.widgets.length; ++i) {
-                o.widgets_values[i] = this.widgets[i].value;
+				if(this.widgets[i])
+	                o.widgets_values[i] = this.widgets[i].value;
+				else
+					o.widgets_values[i] = null;
             }
         }
 
@@ -2368,6 +2393,18 @@
             if( this.onPropertyChanged(name, value, prev_value) === false ) //abort change
 				this.properties[name] = prev_value;
         }
+		if(this.widgets) //widgets could be linked to properties
+			for(var i = 0; i < this.widgets.length; ++i)
+			{
+				var w = this.widgets[i];
+				if(!w)
+					continue;
+				if(w.options.property == name)
+				{
+					w.value = value;
+					break;
+				}
+			}
     };
 
     // Execution *************************
@@ -3132,14 +3169,52 @@
     };
 
     /**
-     * Allows to pass
+     * returns all the info available about a property of this node.
+     *
+     * @method getPropertyInfo
+     * @param {String} property name of the property
+     * @return {Object} the object with all the available info
+    */
+    LGraphNode.prototype.getPropertyInfo = function( property )
+	{
+        var info = null;
+
+		//there are several ways to define info about a property
+		//legacy mode
+		if (this.properties_info) {
+            for (var i = 0; i < this.properties_info.length; ++i) {
+                if (this.properties_info[i].name == property) {
+                    info = this.properties_info[i];
+                    break;
+                }
+            }
+        }
+		//litescene mode using the constructor
+		if(this.constructor["@" + property])
+			info = this.constructor["@" + property];
+
+		//litescene mode using the constructor
+		if (this.onGetPropertyInfo) {
+            info = this.onGetPropertyInfo(property);
+        }
+
+        if (!info)
+            info = {};
+		if(!info.type)
+			info.type = typeof this.properties[property];
+
+		return info;
+	}
+
+    /**
+     * Defines a widget inside the node, it will be rendered on top of the node, you can control lots of properties
      *
      * @method addWidget
      * @param {String} type the widget type (could be "number","string","combo"
      * @param {String} name the text to show on the widget
      * @param {String} value the default value
-     * @param {Function} callback function to call when it changes (optionally, it can be the name of the property to modify)
-     * @param {Object} options the object that contains special properties of this widget 
+     * @param {Function|String} callback function to call when it changes (optionally, it can be the name of the property to modify)
+     * @param {Object} options the object that contains special properties of this widget
      * @return {Object} the created widget object
      */
     LGraphNode.prototype.addWidget = function( type, name, value, callback, options )
@@ -4510,14 +4585,12 @@ LGraphNode.prototype.executeAction = function(action)
             return;
         }
 
-        /*
-	if(this.graph)
-		this.graph.canvas = null; //remove old graph link to the canvas
-	this.graph = graph;
-	if(this.graph)
-		this.graph.canvas = this;
-	*/
         graph.attachCanvas(this);
+
+		//remove the graph stack in case a subgraph was open
+		if (this._graph_stack)
+			this._graph_stack = null;
+
         this.setDirty(true, true);
     };
 
@@ -5119,7 +5192,7 @@ LGraphNode.prototype.executeAction = function(action)
             } //clicked outside of nodes
             else {
                 //search for link connector
-				if(!this.read_only) 
+				if(!this.read_only)
 					for (var i = 0; i < this.visible_links.length; ++i) {
 						var link = this.visible_links[i];
 						var center = link._pos;
@@ -5454,16 +5527,8 @@ LGraphNode.prototype.executeAction = function(action)
         LGraphCanvas.active_canvas = this;
 
         //restore the mousemove event back to the canvas
-        document.removeEventListener(
-            "mousemove",
-            this._mousemove_callback,
-            true
-        );
-        this.canvas.addEventListener(
-            "mousemove",
-            this._mousemove_callback,
-            true
-        );
+        document.removeEventListener("mousemove",this._mousemove_callback,true);
+        this.canvas.addEventListener("mousemove",this._mousemove_callback,true);
         document.removeEventListener("mouseup", this._mouseup_callback, true);
 
         this.adjustMouseEvent(e);
@@ -5472,6 +5537,12 @@ LGraphNode.prototype.executeAction = function(action)
         this.last_mouse_dragging = false;
 
         if (e.which == 1) {
+
+			if( this.node_widget )
+			{
+				this.processNodeWidgets( this.node_widget[0], this.canvas_mouse, e );
+			}
+
             //left button
             this.node_widget = null;
 
@@ -6201,7 +6272,7 @@ LGraphNode.prototype.executeAction = function(action)
         for (var i in this.selected_nodes) {
             var node = this.selected_nodes[i];
 			//autoconnect when possible (very basic, only takes into account first input-output)
-			if(node.inputs && node.inputs.length && node.outputs && node.outputs.length && LiteGraph.isValidConnection( node.inputs[0].type, node.outputs[0].type ) && node.inputs[0].link && node.outputs[0].links && node.outputs[0].links.length ) 
+			if(node.inputs && node.inputs.length && node.outputs && node.outputs.length && LiteGraph.isValidConnection( node.inputs[0].type, node.outputs[0].type ) && node.inputs[0].link && node.outputs[0].links && node.outputs[0].links.length )
 			{
 				var input_link = node.graph.links[ node.inputs[0].link ];
 				var output_link = node.graph.links[ node.outputs[0].links[0] ];
@@ -7237,6 +7308,7 @@ LGraphNode.prototype.executeAction = function(action)
 
 		if(text == null)
 			return;
+		text = text.substr(0,30); //avoid weird
 
 		ctx.font = "14px Courier New";
 		var info = ctx.measureText(text);
@@ -7467,7 +7539,7 @@ LGraphNode.prototype.executeAction = function(action)
             }
             if (!low_quality) {
                 ctx.font = this.title_text_font;
-                var title = node.getTitle();
+                var title = String(node.getTitle());
                 if (title) {
                     if (selected) {
                         ctx.fillStyle = "white";
@@ -7477,11 +7549,11 @@ LGraphNode.prototype.executeAction = function(action)
                             this.node_title_color;
                     }
                     if (node.flags.collapsed) {
-                        ctx.textAlign = "center";
+                        ctx.textAlign = "left";
                         var measure = ctx.measureText(title);
                         ctx.fillText(
-                            title,
-                            title_height + measure.width * 0.5,
+                            title.substr(0,20), //avoid urls too long
+                            title_height,// + measure.width * 0.5,
                             LiteGraph.NODE_TITLE_TEXT_Y - title_height
                         );
                         ctx.textAlign = "left";
@@ -8216,8 +8288,17 @@ LGraphNode.prototype.executeAction = function(action)
                                 y + H * 0.7
                             );
                         } else {
+							var v = w.value;
+							if( w.options.values )
+							{
+								var values = w.options.values;
+								if( values.constructor === Function )
+									values = values();
+								if(values && values.constructor !== Array)
+									v = values[ w.value ];
+							}
                             ctx.fillText(
-                                w.value,
+                                v,
                                 width - margin * 2 - 20,
                                 y + H * 0.7
                             );
@@ -8236,6 +8317,11 @@ LGraphNode.prototype.executeAction = function(action)
 	                    ctx.rect( margin, posY, width - margin * 2, H );
                     ctx.fill();
                     if (show_text) {
+						ctx.save();
+						ctx.beginPath();
+						ctx.rect(margin, posY, width - margin * 2, H);
+						ctx.clip();
+
 	                    ctx.stroke();
                         ctx.fillStyle = secondary_text_color;
                         if (w.name != null) {
@@ -8243,7 +8329,8 @@ LGraphNode.prototype.executeAction = function(action)
                         }
                         ctx.fillStyle = text_color;
                         ctx.textAlign = "right";
-                        ctx.fillText(w.value, width - margin * 2, y + H * 0.7);
+                        ctx.fillText(String(w.value).substr(0,30), width - margin * 2, y + H * 0.7); //30 chars max
+						ctx.restore();
                     }
                     break;
                 default:
@@ -8282,7 +8369,7 @@ LGraphNode.prototype.executeAction = function(action)
 
         for (var i = 0; i < node.widgets.length; ++i) {
             var w = node.widgets[i];
-			if(w.disabled)
+			if(!w || w.disabled)
 				continue;
             if ( w == active_widget || (x > 6 && x < width - 12 && y > w.last_y && y < w.last_y + LiteGraph.NODE_WIDGET_HEIGHT) ) {
                 //inside widget
@@ -8314,19 +8401,13 @@ LGraphNode.prototype.executeAction = function(action)
                         break;
                     case "number":
                     case "combo":
+						var old_value = w.value;
                         if (event.type == "mousemove" && w.type == "number") {
-                            w.value +=
-                                event.deltaX * 0.1 * (w.options.step || 1);
-                            if (
-                                w.options.min != null &&
-                                w.value < w.options.min
-                            ) {
+                            w.value += event.deltaX * 0.1 * (w.options.step || 1);
+                            if ( w.options.min != null && w.value < w.options.min ) {
                                 w.value = w.options.min;
                             }
-                            if (
-                                w.options.max != null &&
-                                w.value > w.options.max
-                            ) {
+                            if ( w.options.max != null && w.value > w.options.max ) {
                                 w.value = w.options.max;
                             }
                         } else if (event.type == "mousedown") {
@@ -8334,56 +8415,71 @@ LGraphNode.prototype.executeAction = function(action)
                             if (values && values.constructor === Function) {
                                 values = w.options.values(w, node);
                             }
+							var values_list = values.constructor === Array ? values : Object.keys(values);
 
                             var delta = x < 40 ? -1 : x > width - 40 ? 1 : 0;
                             if (w.type == "number") {
                                 w.value += delta * 0.1 * (w.options.step || 1);
-                                if (
-                                    w.options.min != null &&
-                                    w.value < w.options.min
-                                ) {
+                                if ( w.options.min != null && w.value < w.options.min ) {
                                     w.value = w.options.min;
                                 }
-                                if (
-                                    w.options.max != null &&
-                                    w.value > w.options.max
-                                ) {
+                                if ( w.options.max != null && w.value > w.options.max ) {
                                     w.value = w.options.max;
                                 }
-                            } else if (delta) {
-                                var index = values.indexOf(w.value) + delta;
-                                if (index >= values.length) {
-                                    index = 0;
+                            } else if (delta) { //clicked in arrow, used for combos
+								var index = -1;
+								if(values.constructor === Object)
+									index = values_list.indexOf( String( w.value ) ) + delta;
+								else
+									index = values_list.indexOf( w.value ) + delta;
+                                if (index >= values_list.length) {
+                                    index = values_list.length - 1;
                                 }
                                 if (index < 0) {
-                                    index = values.length - 1;
+                                    index = 0;
                                 }
-                                w.value = values[index];
-                            } else {
-                                var menu = new LiteGraph.ContextMenu(
-                                    values,
-                                    {
+								if( values.constructor === Array )
+	                                w.value = values[index];
+								else
+	                                w.value = index;
+                            } else { //combo clicked
+								var text_values = values != values_list ? Object.values(values) : values;
+                                var menu = new LiteGraph.ContextMenu(text_values, {
                                         scale: Math.max(1, this.ds.scale),
                                         event: event,
                                         className: "dark",
                                         callback: inner_clicked.bind(w)
                                     },
-                                    ref_window
-                                );
+                                    ref_window);
                                 function inner_clicked(v, option, event) {
+									if(values != values_list)
+										v = text_values.indexOf(v);
                                     this.value = v;
                                     inner_value_change(this, v);
                                     that.dirty_canvas = true;
                                     return false;
                                 }
                             }
-                        }
-                        setTimeout(
-                            function() {
-                                inner_value_change(this, this.value);
-                            }.bind(w),
-                            20
-                        );
+                        } //end mousedown
+						else if(event.type == "mouseup" && w.type == "number")
+						{
+                            var delta = x < 40 ? -1 : x > width - 40 ? 1 : 0;
+							if (event.click_time < 200 && delta == 0) {
+								this.prompt("Value",w.value,function(v) {
+										this.value = Number(v);
+										inner_value_change(this, this.value);
+									}.bind(w),
+									event);
+							}
+						}
+
+						if( old_value != w.value )
+							setTimeout(
+								function() {
+									inner_value_change(this, this.value);
+								}.bind(w),
+								20
+							);
                         this.dirty_canvas = true;
                         break;
                     case "toggle":
@@ -8397,15 +8493,11 @@ LGraphNode.prototype.executeAction = function(action)
                     case "string":
                     case "text":
                         if (event.type == "mousedown") {
-                            this.prompt(
-                                "Value",
-                                w.value,
-                                function(v) {
+                            this.prompt("Value",w.value,function(v) {
                                     this.value = v;
                                     inner_value_change(this, v);
                                 }.bind(w),
-                                event
-                            );
+                                event);
                         }
                         break;
                     default:
@@ -8413,7 +8505,7 @@ LGraphNode.prototype.executeAction = function(action)
                             w.mouse(ctx, event, [x, y], node);
                         }
                         break;
-                }
+                } //end switch
 
                 return w;
             }
@@ -9233,7 +9325,7 @@ LGraphNode.prototype.executeAction = function(action)
         dialog.style.top = top + "px";
 
 		//To avoid out of screen problems
-		if(event.layerY > (rect.height - 200)) 
+		if(event.layerY > (rect.height - 200))
             helper.style.maxHeight = (rect.height - event.layerY - 20) + "px";
 
 		/*
@@ -9420,11 +9512,7 @@ LGraphNode.prototype.executeAction = function(action)
         return dialog;
     };
 
-    LGraphCanvas.prototype.showEditPropertyValue = function(
-        node,
-        property,
-        options
-    ) {
+    LGraphCanvas.prototype.showEditPropertyValue = function( node, property, options ) {
         if (!node || node.properties[property] === undefined) {
             return;
         }
@@ -9432,28 +9520,8 @@ LGraphNode.prototype.executeAction = function(action)
         options = options || {};
         var that = this;
 
-        var type = "string";
-
-        if (node.properties[property] !== null) {
-            type = typeof node.properties[property];
-        }
-
-        var info = null;
-        if (node.getPropertyInfo) {
-            info = node.getPropertyInfo(property);
-        }
-        if (node.properties_info) {
-            for (var i = 0; i < node.properties_info.length; ++i) {
-                if (node.properties_info[i].name == property) {
-                    info = node.properties_info[i];
-                    break;
-                }
-            }
-        }
-
-        if (info !== undefined && info !== null && info.type) {
-            type = info.type;
-        }
+        var info = node.getPropertyInfo(property);
+		var type = info.type;
 
         var input_html = "";
 
@@ -9547,9 +9615,13 @@ LGraphNode.prototype.executeAction = function(action)
             if (node.onPropertyChanged) {
                 node.onPropertyChanged(property, value);
             }
+			if(options.onclose)
+				options.onclose();
             dialog.close();
             node.setDirtyCanvas(true, true);
         }
+
+		return dialog;
     };
 
     LGraphCanvas.prototype.createDialog = function(html, options) {
@@ -10240,11 +10312,12 @@ LGraphNode.prototype.executeAction = function(action)
             }
         }
 
-        if (
-            options.event &&
-            options.event.constructor !== MouseEvent &&
-            options.event.constructor !== CustomEvent &&
-	    options.event.constructor !== PointerEvent
+		var eventClass = null;
+		if(options.event) //use strings because comparing classes between windows doesnt work
+			eventClass = options.event.constructor.name;
+        if ( eventClass !== "MouseEvent" &&
+            eventClass !== "CustomEvent" &&
+			eventClass !== "PointerEvent"
         ) {
             console.error(
                 "Event passed to ContextMenu is not of type MouseEvent or CustomEvent. Ignoring it."
@@ -11130,7 +11203,7 @@ if (typeof exports != "undefined") {
 			name: "",
 			type: "number",
 			value: 0
-		}; 
+		};
 
         var that = this;
 
@@ -11179,12 +11252,17 @@ if (typeof exports != "undefined") {
 	{
 		var type = this.properties.type;
 		this.type_widget.value = type;
+		if(this.outputs[0].type != type)
+		{
+			this.outputs[0].type = type;
+			this.disconnectOutput(0);
+		}
 		if(type == "number")
 		{
 			this.value_widget.type = "number";
 			this.value_widget.value = 0;
 		}
-		else if(type == "bool")
+		else if(type == "boolean")
 		{
 			this.value_widget.type = "toggle";
 			this.value_widget.value = true;
@@ -11250,8 +11328,10 @@ if (typeof exports != "undefined") {
         var data = this.graph.inputs[name];
         if (!data) {
             this.setOutputData(0, this.properties.value );
+			return;
         }
-        this.setOutputData(0, data.value === undefined ? this.properties.value : data.value);
+
+        this.setOutputData(0, data.value !== undefined ? data.value : this.properties.value );
     };
 
     GraphInput.prototype.onRemoved = function() {
@@ -11312,27 +11392,8 @@ if (typeof exports != "undefined") {
             enumerable: true
         });
 
-        this.name_widget = this.addWidget(
-            "text",
-            "Name",
-            this.properties.name,
-            function(v) {
-                if (!v) {
-                    return;
-                }
-                that.properties.name = v;
-            }
-        );
-        this.type_widget = this.addWidget(
-            "text",
-            "Type",
-            this.properties.type,
-            function(v) {
-                v = v || "";
-                that.properties.type = v;
-            }
-        );
-
+        this.name_widget = this.addWidget("text","Name",this.properties.name,"name");
+        this.type_widget = this.addWidget("text","Type",this.properties.type,"type");
         this.widgets_up = true;
         this.size = [180, 60];
     }
@@ -11371,6 +11432,9 @@ if (typeof exports != "undefined") {
     function ConstantNumber() {
         this.addOutput("value", "number");
         this.addProperty("value", 1.0);
+        this.widget = this.addWidget("number","value",1,"value");
+        this.widgets_up = true;
+        this.size = [180, 30];
     }
 
     ConstantNumber.title = "Const Number";
@@ -11387,9 +11451,10 @@ if (typeof exports != "undefined") {
         return this.title;
     };
 
-    ConstantNumber.prototype.setValue = function(v) {
-        this.properties.value = v;
-    };
+	ConstantNumber.prototype.setValue = function(v)
+	{
+		this.setProperty("value",v);
+	}
 
     ConstantNumber.prototype.onDrawBackground = function(ctx) {
         //show the current value
@@ -11398,29 +11463,36 @@ if (typeof exports != "undefined") {
 
     LiteGraph.registerNodeType("basic/const", ConstantNumber);
 
+    function ConstantBoolean() {
+        this.addOutput("", "boolean");
+        this.addProperty("value", true);
+        this.widget = this.addWidget("toggle","value",true,"value");
+        this.widgets_up = true;
+        this.size = [140, 30];
+    }
+
+    ConstantBoolean.title = "Const Boolean";
+    ConstantBoolean.desc = "Constant boolean";
+    ConstantBoolean.prototype.getTitle = ConstantNumber.prototype.getTitle;
+
+    ConstantBoolean.prototype.onExecute = function() {
+        this.setOutputData(0, this.properties["value"]);
+    };
+
+	ConstantBoolean.prototype.setValue = ConstantNumber.prototype.setValue;
+
+    LiteGraph.registerNodeType("basic/boolean", ConstantBoolean);
+
     function ConstantString() {
         this.addOutput("", "string");
         this.addProperty("value", "");
-        this.widget = this.addWidget(
-            "text",
-            "value",
-            "",
-            this.setValue.bind(this)
-        );
+        this.widget = this.addWidget("text","value","","value");  //link to property value
         this.widgets_up = true;
-        this.size = [100, 30];
+        this.size = [180, 30];
     }
 
     ConstantString.title = "Const String";
     ConstantString.desc = "Constant string";
-
-    ConstantString.prototype.setValue = function(v) {
-        this.properties.value = v;
-    };
-
-    ConstantString.prototype.onPropertyChanged = function(name, value) {
-        this.widget.value = value;
-    };
 
     ConstantString.prototype.getTitle = ConstantNumber.prototype.getTitle;
 
@@ -11428,17 +11500,124 @@ if (typeof exports != "undefined") {
         this.setOutputData(0, this.properties["value"]);
     };
 
+	ConstantString.prototype.setValue = ConstantNumber.prototype.setValue;
+
+	ConstantString.prototype.onDropFile = function(file)
+	{
+		var that = this;
+		var reader = new FileReader();
+		reader.onload = function(e)
+		{
+			that.setProperty("value",e.target.result);
+		}
+		reader.readAsText(file);
+	}
+
     LiteGraph.registerNodeType("basic/string", ConstantString);
 
+    function ConstantFile() {
+        this.addInput("url", "");
+        this.addOutput("", "");
+        this.addProperty("url", "");
+        this.addProperty("type", "text");
+        this.widget = this.addWidget("text","url","","url");
+        this._data = null;
+    }
+
+    ConstantFile.title = "Const File";
+    ConstantFile.desc = "Fetches a file from an url";
+    ConstantFile["@type"] = { type: "enum", values: ["text","arraybuffer","blob","json"] };
+
+    ConstantFile.prototype.onPropertyChanged = function(name, value) {
+        if (name == "url")
+		{
+			if( value == null || value == "")
+				this._data = null;
+			else
+			{
+				this.fetchFile(value);
+			}
+		}
+	}
+
+    ConstantFile.prototype.onExecute = function() {
+		var url = this.getInputData(0) || this.properties.url;
+		if(url && (url != this._url || this._type != this.properties.type))
+			this.fetchFile(url);
+        this.setOutputData(0, this._data );
+    };
+
+	ConstantFile.prototype.setValue = ConstantNumber.prototype.setValue;
+
+    ConstantFile.prototype.fetchFile = function(url) {
+		var that = this;
+		if(!url || url.constructor !== String)
+		{
+			that._data = null;
+            that.boxcolor = null;
+			return;
+		}
+
+		this._url = url;
+		this._type = this.properties.type;
+        if (url.substr(0, 4) == "http" && LiteGraph.proxy) {
+            url = LiteGraph.proxy + url.substr(url.indexOf(":") + 3);
+        }
+		fetch(url)
+		.then(function(response) {
+			if(!response.ok)
+				 throw new Error("File not found");
+
+			if(that.properties.type == "arraybuffer")
+				return response.arrayBuffer();
+			else if(that.properties.type == "text")
+				return response.text();
+			else if(that.properties.type == "json")
+				return response.json();
+			else if(that.properties.type == "blob")
+				return response.blob();
+		})
+		.then(function(data) {
+			that._data = data;
+            that.boxcolor = "#AEA";
+		})
+		.catch(function(error) {
+			that._data = null;
+            that.boxcolor = "red";
+			console.error("error fetching file:",url);
+		});
+    };
+
+	ConstantFile.prototype.onDropFile = function(file)
+	{
+		var that = this;
+		this._url = file.name;
+		this._type = this.properties.type;
+		this.properties.url = file.name;
+		var reader = new FileReader();
+		reader.onload = function(e)
+		{
+            that.boxcolor = "#AEA";
+			var v = e.target.result;
+			if( that.properties.type == "json" )
+				v = JSON.parse(v);
+			that._data = v;
+		}
+		if(that.properties.type == "arraybuffer")
+			reader.readAsArrayBuffer(file);
+		else if(that.properties.type == "text" || that.properties.type == "json")
+			reader.readAsText(file);
+		else if(that.properties.type == "blob")
+			return reader.readAsBinaryString(file);
+	}
+
+    LiteGraph.registerNodeType("basic/file", ConstantFile);
+
+	//to store json objects
     function ConstantData() {
         this.addOutput("", "");
         this.addProperty("value", "");
-        this.widget = this.addWidget(
-            "text",
-            "json",
-            "",
-            this.setValue.bind(this)
-        );
+        this.widget = this.addWidget("text","json","","value");
         this.widgets_up = true;
         this.size = [140, 30];
         this._value = null;
@@ -11446,11 +11625,6 @@ if (typeof exports != "undefined") {
 
     ConstantData.title = "Const Data";
     ConstantData.desc = "Constant Data";
-
-    ConstantData.prototype.setValue = function(v) {
-        this.properties.value = v;
-        this.onPropertyChanged("value", v);
-    };
 
     ConstantData.prototype.onPropertyChanged = function(name, value) {
         this.widget.value = value;
@@ -11470,18 +11644,113 @@ if (typeof exports != "undefined") {
         this.setOutputData(0, this._value);
     };
 
+	ConstantData.prototype.setValue = ConstantNumber.prototype.setValue;
+
     LiteGraph.registerNodeType("basic/data", ConstantData);
+
+	//to store json objects
+    function ConstantArray() {
+        this.addInput("", "");
+        this.addOutput("", "array");
+        this.addProperty("value", "");
+        this.widget = this.addWidget("text","array","","value");
+        this.widgets_up = true;
+        this.size = [140, 30];
+        this._value = null;
+    }
+
+    ConstantArray.title = "Const Array";
+    ConstantArray.desc = "Constant Array";
+
+    ConstantArray.prototype.onPropertyChanged = function(name, value) {
+        this.widget.value = value;
+        if (value == null || value == "") {
+            return;
+        }
+
+        try {
+            this._value = JSON.parse(value);
+            this.boxcolor = "#AEA";
+        } catch (err) {
+            this.boxcolor = "red";
+        }
+    };
+
+    ConstantArray.prototype.onExecute = function() {
+        var v = this.getInputData(0);
+		if(v && v.length)
+		{
+			if(!this._value)
+				this._value = new Array();
+			this._value.length = v.length;
+			for(var i = 0; i < v.length; ++i)
+				this._value[i] = v[i];
+		}
+		this.setOutputData(0, this._value);
+    };
+
+	ConstantArray.prototype.setValue = ConstantNumber.prototype.setValue;
+
+    LiteGraph.registerNodeType("basic/array", ConstantArray);
+
+    function ArrayElement() {
+        this.addInput("array", "array,table,string");
+        this.addInput("index", "number");
+        this.addOutput("value", "");
+		this.addProperty("index",0);
+    }
+
+    ArrayElement.title = "Array[i]";
+    ArrayElement.desc = "Returns an element from an array";
+
+    ArrayElement.prototype.onExecute = function() {
+        var array = this.getInputData(0);
+        var index = this.getInputData(1);
+		if(index == null)
+			index = this.properties.index;
+		if(array == null || index == null )
+			return;
+        this.setOutputData(0, array[Math.floor(Number(index))] );
+    };
+
+    LiteGraph.registerNodeType("basic/array[]", ArrayElement);
+
+    function TableElement() {
+        this.addInput("table", "table");
+        this.addInput("row", "number");
+        this.addInput("col", "number");
+        this.addOutput("value", "");
+		this.addProperty("row",0);
+		this.addProperty("column",0);
+    }
+
+    TableElement.title = "Table[row][col]";
+    TableElement.desc = "Returns an element from a table";
+
+    TableElement.prototype.onExecute = function() {
+        var table = this.getInputData(0);
+        var row = this.getInputData(1);
+        var col = this.getInputData(2);
+		if(row == null)
+			row = this.properties.row;
+		if(col == null)
+			col = this.properties.column;
+		if(table == null || row == null || col == null)
+			return;
+		var row = table[Math.floor(Number(row))];
+		if(row)
+	        this.setOutputData(0, row[Math.floor(Number(col))] );
+		else
+	        this.setOutputData(0, null );
+    };
+
+    LiteGraph.registerNodeType("basic/table[][]", TableElement);
 
     function ObjectProperty() {
         this.addInput("obj", "");
         this.addOutput("", "");
         this.addProperty("value", "");
-        this.widget = this.addWidget(
-            "text",
-            "prop.",
-            "",
-            this.setValue.bind(this)
-        );
+        this.widget = this.addWidget("text","prop.","",this.setValue.bind(this) );
         this.widgets_up = true;
         this.size = [140, 30];
         this._value = null;
@@ -11590,6 +11859,18 @@ if (typeof exports != "undefined") {
 
     LiteGraph.registerNodeType("basic/variable", Variable);
 
+    function length(v) {
+        if(v && v.length != null)
+			return Number(v.length);
+		return 0;
+    }
+
+    LiteGraph.wrapFunctionAsNode(
+        "basic/length",
+        length,
+        ["*"],
+        "number"
+    );
 
 	function DownloadData() {
         this.size = [60, 30];
@@ -11893,22 +12174,30 @@ if (typeof exports != "undefined") {
     //convert to Event if the value is true
     function TriggerEvent() {
         this.size = [60, 30];
-        this.addInput("in", "");
+        this.addInput("if", "");
         this.addOutput("true", LiteGraph.EVENT);
         this.addOutput("change", LiteGraph.EVENT);
-		this.was_true = false;
+        this.addOutput("false", LiteGraph.EVENT);
+		this.properties = { only_on_change: true };
+		this.prev = 0;
     }
 
     TriggerEvent.title = "TriggerEvent";
-    TriggerEvent.desc = "Triggers event if value is true";
+    TriggerEvent.desc = "Triggers event if input evaluates to true";
 
     TriggerEvent.prototype.onExecute = function(action, param) {
 		var v = this.getInputData(0);
-		if(v)
+		var changed = (v != this.prev);
+		if(this.prev === 0)
+			changed = false;
+		var must_resend = (changed && this.properties.only_on_change) || (!changed && !this.properties.only_on_change);
+		if(v && must_resend )
 	        this.triggerSlot(0, param);
-		if(v && !this.was_true)
+		if(!v && must_resend)
+	        this.triggerSlot(2, param);
+		if(changed)
 	        this.triggerSlot(1, param);
-		this.was_true = v;
+		this.prev = v;
     };
 
     LiteGraph.registerNodeType("events/trigger", TriggerEvent);
@@ -12472,6 +12761,47 @@ if (typeof exports != "undefined") {
     };
 
     LiteGraph.registerNodeType("widget/number", WidgetNumber);
+
+
+    /* Combo ****************/
+
+    function WidgetCombo() {
+        this.addOutput("", "string");
+        this.addOutput("change", LiteGraph.EVENT);
+        this.size = [80, 60];
+        this.properties = { value: "A", values:"A;B;C" };
+        this.old_y = -1;
+        this.mouse_captured = false;
+		this._values = this.properties.values.split(";");
+		var that = this;
+        this.widgets_up = true;
+		this.widget = this.addWidget("combo","", this.properties.value, function(v){
+			that.properties.value = v;
+            that.triggerSlot(1, v);
+		}, { property: "value", values: this._values } );
+    }
+
+    WidgetCombo.title = "Combo";
+    WidgetCombo.desc = "Widget to select from a list";
+
+    WidgetCombo.prototype.onExecute = function() {
+        this.setOutputData( 0, this.properties.value );
+    };
+
+    WidgetCombo.prototype.onPropertyChanged = function(name, value) {
+		if(name == "values")
+		{
+			this._values = value.split(";");
+			this.widget.options.values = this._values;
+		}
+		else if(name == "value")
+		{
+			this.widget.value = value;
+		}
+	};
+
+    LiteGraph.registerNodeType("widget/combo", WidgetCombo);
+
 
     /* Knob ****************/
 
@@ -14558,143 +14888,6 @@ if (typeof exports != "undefined") {
 
     LiteGraph.registerNodeType("math3d/xyzw-to-vec4", Math3DXYZWToVec4);
 
-    //if glMatrix is installed...
-    if (global.glMatrix) {
-        function Math3DQuaternion() {
-            this.addOutput("quat", "quat");
-            this.properties = { x: 0, y: 0, z: 0, w: 1 };
-            this._value = quat.create();
-        }
-
-        Math3DQuaternion.title = "Quaternion";
-        Math3DQuaternion.desc = "quaternion";
-
-        Math3DQuaternion.prototype.onExecute = function() {
-            this._value[0] = this.properties.x;
-            this._value[1] = this.properties.y;
-            this._value[2] = this.properties.z;
-            this._value[3] = this.properties.w;
-            this.setOutputData(0, this._value);
-        };
-
-        LiteGraph.registerNodeType("math3d/quaternion", Math3DQuaternion);
-
-        function Math3DRotation() {
-            this.addInputs([["degrees", "number"], ["axis", "vec3"]]);
-            this.addOutput("quat", "quat");
-            this.properties = { angle: 90.0, axis: vec3.fromValues(0, 1, 0) };
-
-            this._value = quat.create();
-        }
-
-        Math3DRotation.title = "Rotation";
-        Math3DRotation.desc = "quaternion rotation";
-
-        Math3DRotation.prototype.onExecute = function() {
-            var angle = this.getInputData(0);
-            if (angle == null) {
-                angle = this.properties.angle;
-            }
-            var axis = this.getInputData(1);
-            if (axis == null) {
-                axis = this.properties.axis;
-            }
-
-            var R = quat.setAxisAngle(this._value, axis, angle * 0.0174532925);
-            this.setOutputData(0, R);
-        };
-
-        LiteGraph.registerNodeType("math3d/rotation", Math3DRotation);
-
-        //Math3D rotate vec3
-        function Math3DRotateVec3() {
-            this.addInputs([["vec3", "vec3"], ["quat", "quat"]]);
-            this.addOutput("result", "vec3");
-            this.properties = { vec: [0, 0, 1] };
-        }
-
-        Math3DRotateVec3.title = "Rot. Vec3";
-        Math3DRotateVec3.desc = "rotate a point";
-
-        Math3DRotateVec3.prototype.onExecute = function() {
-            var vec = this.getInputData(0);
-            if (vec == null) {
-                vec = this.properties.vec;
-            }
-            var quat = this.getInputData(1);
-            if (quat == null) {
-                this.setOutputData(vec);
-            } else {
-                this.setOutputData(
-                    0,
-                    vec3.transformQuat(vec3.create(), vec, quat)
-                );
-            }
-        };
-
-        LiteGraph.registerNodeType("math3d/rotate_vec3", Math3DRotateVec3);
-
-        function Math3DMultQuat() {
-            this.addInputs([["A", "quat"], ["B", "quat"]]);
-            this.addOutput("A*B", "quat");
-
-            this._value = quat.create();
-        }
-
-        Math3DMultQuat.title = "Mult. Quat";
-        Math3DMultQuat.desc = "rotate quaternion";
-
-        Math3DMultQuat.prototype.onExecute = function() {
-            var A = this.getInputData(0);
-            if (A == null) {
-                return;
-            }
-            var B = this.getInputData(1);
-            if (B == null) {
-                return;
-            }
-
-            var R = quat.multiply(this._value, A, B);
-            this.setOutputData(0, R);
-        };
-
-        LiteGraph.registerNodeType("math3d/mult-quat", Math3DMultQuat);
-
-        function Math3DQuatSlerp() {
-            this.addInputs([
-                ["A", "quat"],
-                ["B", "quat"],
-                ["factor", "number"]
-            ]);
-            this.addOutput("slerp", "quat");
-            this.addProperty("factor", 0.5);
-
-            this._value = quat.create();
-        }
-
-        Math3DQuatSlerp.title = "Quat Slerp";
-        Math3DQuatSlerp.desc = "quaternion spherical interpolation";
-
-        Math3DQuatSlerp.prototype.onExecute = function() {
-            var A = this.getInputData(0);
-            if (A == null) {
-                return;
-            }
-            var B = this.getInputData(1);
-            if (B == null) {
-                return;
-            }
-            var factor = this.properties.factor;
-            if (this.getInputData(2) != null) {
-                factor = this.getInputData(2);
-            }
-
-            var R = quat.slerp(this._value, A, B, factor);
-            this.setOutputData(0, R);
-        };
-
-        LiteGraph.registerNodeType("math3d/quat-slerp", Math3DQuatSlerp);
-    } //glMatrix
 })(this);
 
 (function(global) {
@@ -14758,7 +14951,7 @@ if (typeof exports != "undefined") {
 			mat4.scale( M, M, S );
 		}
 
-		this.setOutputData(0, M);		
+		this.setOutputData(0, M);
 	}
 
     LiteGraph.registerNodeType("math3d/mat4", Math3DMat4);
@@ -15211,6 +15404,2437 @@ if (typeof exports != "undefined") {
     LiteGraph.wrapFunctionAsNode(
         "string/compare",
         compare,
+        ["string", "string"],
+        "boolean"
+    );
+
+    function concatenate(a, b) {
+        if (a === undefined) {
+            return b;
+        }
+        if (b === undefined) {
+            return a;
+        }
+        return a + b;
+    }
+
+    LiteGraph.wrapFunctionAsNode(
+        "string/concatenate",
+        concatenate,
+        ["string", "string"],
+        "string"
+    );
+
+    function contains(a, b) {
+        if (a === undefined || b === undefined) {
+            return false;
+        }
+        return a.indexOf(b) != -1;
+    }
+
+    LiteGraph.wrapFunctionAsNode(
+        "string/contains",
+        contains,
+        ["string", "string"],
+        "boolean"
+    );
+
+    function toUpperCase(a) {
+        if (a != null && a.constructor === String) {
+            return a.toUpperCase();
+        }
+        return a;
+    }
+
+    LiteGraph.wrapFunctionAsNode(
+        "string/toUpperCase",
+        toUpperCase,
+        ["string"],
+        "string"
+    );
+
+    function split(str, separator) {
+		if(separator == null)
+			separator = this.properties.separator;
+        if (str == null )
+	        return [];
+		if( str.constructor === String )
+			return str.split(separator || " ");
+		else if( str.constructor === Array )
+		{
+			var r = [];
+			for(var i = 0; i < str.length; ++i)
+				r[i] = str[i].split(separator || " ");
+			return r;
+		}
+        return null;
+    }
+
+    LiteGraph.wrapFunctionAsNode(
+        "string/split",
+        split,
+        ["string,array", "string"],
+        "array",
+		{ separator: "," }
+    );
+
+    function toFixed(a) {
+        if (a != null && a.constructor === Number) {
+            return a.toFixed(this.properties.precision);
+        }
+        return a;
+    }
+
+    LiteGraph.wrapFunctionAsNode(
+        "string/toFixed",
+        toFixed,
+        ["number"],
+        "string",
+        { precision: 0 }
+    );
+
+
+    function StringToTable() {
+        this.addInput("", "string");
+        this.addOutput("table", "table");
+        this.addOutput("rows", "number");
+        this.addProperty("value", "");
+        this.addProperty("separator", ",");
+		this._table = null;
+    }
+
+    StringToTable.title = "toTable";
+    StringToTable.desc = "Splits a string to table";
+
+    StringToTable.prototype.onExecute = function() {
+        var input = this.getInputData(0);
+		if(!input)
+			return;
+		var separator = this.properties.separator || ",";
+		if(input != this._str || separator != this._last_separator )
+		{
+			this._last_separator = separator;
+			this._str = input;
+			this._table = input.split("\n").map(function(a){ return a.trim().split(separator)});
+		}
+        this.setOutputData(0, this._table );
+        this.setOutputData(1, this._table ? this._table.length : 0 );
+    };
+
+    LiteGraph.registerNodeType("string/toTable", StringToTable);
+
+})(this);
+
+(function(global) {
+    var LiteGraph = global.LiteGraph;
+
+    function GamepadInput() {
+        this.addOutput("left_x_axis", "number");
+        this.addOutput("left_y_axis", "number");
+        this.addOutput("button_pressed", LiteGraph.EVENT);
+        this.properties = { gamepad_index: 0, threshold: 0.1 };
+
+        this._left_axis = new Float32Array(2);
+        this._right_axis = new Float32Array(2);
+        this._triggers = new Float32Array(2);
+        this._previous_buttons = new Uint8Array(17);
+        this._current_buttons = new Uint8Array(17);
+    }
+
+    GamepadInput.title = "Gamepad";
+    GamepadInput.desc = "gets the input of the gamepad";
+
+    GamepadInput.CENTER = 0;
+    GamepadInput.LEFT = 1;
+    GamepadInput.RIGHT = 2;
+    GamepadInput.UP = 4;
+    GamepadInput.DOWN = 8;
+
+    GamepadInput.zero = new Float32Array(2);
+    GamepadInput.buttons = [
+        "a",
+        "b",
+        "x",
+        "y",
+        "lb",
+        "rb",
+        "lt",
+        "rt",
+        "back",
+        "start",
+        "ls",
+        "rs",
+        "home"
+    ];
+
+    GamepadInput.prototype.onExecute = function() {
+        //get gamepad
+        var gamepad = this.getGamepad();
+        var threshold = this.properties.threshold || 0.0;
+
+        if (gamepad) {
+            this._left_axis[0] =
+                Math.abs(gamepad.xbox.axes["lx"]) > threshold
+                    ? gamepad.xbox.axes["lx"]
+                    : 0;
+            this._left_axis[1] =
+                Math.abs(gamepad.xbox.axes["ly"]) > threshold
+                    ? gamepad.xbox.axes["ly"]
+                    : 0;
+            this._right_axis[0] =
+                Math.abs(gamepad.xbox.axes["rx"]) > threshold
+                    ? gamepad.xbox.axes["rx"]
+                    : 0;
+            this._right_axis[1] =
+                Math.abs(gamepad.xbox.axes["ry"]) > threshold
+                    ? gamepad.xbox.axes["ry"]
+                    : 0;
+            this._triggers[0] =
+                Math.abs(gamepad.xbox.axes["ltrigger"]) > threshold
+                    ? gamepad.xbox.axes["ltrigger"]
+                    : 0;
+            this._triggers[1] =
+                Math.abs(gamepad.xbox.axes["rtrigger"]) > threshold
+                    ? gamepad.xbox.axes["rtrigger"]
+                    : 0;
+        }
+
+        if (this.outputs) {
+            for (var i = 0; i < this.outputs.length; i++) {
+                var output = this.outputs[i];
+                if (!output.links || !output.links.length) {
+                    continue;
+                }
+                var v = null;
+
+                if (gamepad) {
+                    switch (output.name) {
+                        case "left_axis":
+                            v = this._left_axis;
+                            break;
+                        case "right_axis":
+                            v = this._right_axis;
+                            break;
+                        case "left_x_axis":
+                            v = this._left_axis[0];
+                            break;
+                        case "left_y_axis":
+                            v = this._left_axis[1];
+                            break;
+                        case "right_x_axis":
+                            v = this._right_axis[0];
+                            break;
+                        case "right_y_axis":
+                            v = this._right_axis[1];
+                            break;
+                        case "trigger_left":
+                            v = this._triggers[0];
+                            break;
+                        case "trigger_right":
+                            v = this._triggers[1];
+                            break;
+                        case "a_button":
+                            v = gamepad.xbox.buttons["a"] ? 1 : 0;
+                            break;
+                        case "b_button":
+                            v = gamepad.xbox.buttons["b"] ? 1 : 0;
+                            break;
+                        case "x_button":
+                            v = gamepad.xbox.buttons["x"] ? 1 : 0;
+                            break;
+                        case "y_button":
+                            v = gamepad.xbox.buttons["y"] ? 1 : 0;
+                            break;
+                        case "lb_button":
+                            v = gamepad.xbox.buttons["lb"] ? 1 : 0;
+                            break;
+                        case "rb_button":
+                            v = gamepad.xbox.buttons["rb"] ? 1 : 0;
+                            break;
+                        case "ls_button":
+                            v = gamepad.xbox.buttons["ls"] ? 1 : 0;
+                            break;
+                        case "rs_button":
+                            v = gamepad.xbox.buttons["rs"] ? 1 : 0;
+                            break;
+                        case "hat_left":
+                            v = gamepad.xbox.hatmap & GamepadInput.LEFT;
+                            break;
+                        case "hat_right":
+                            v = gamepad.xbox.hatmap & GamepadInput.RIGHT;
+                            break;
+                        case "hat_up":
+                            v = gamepad.xbox.hatmap & GamepadInput.UP;
+                            break;
+                        case "hat_down":
+                            v = gamepad.xbox.hatmap & GamepadInput.DOWN;
+                            break;
+                        case "hat":
+                            v = gamepad.xbox.hatmap;
+                            break;
+                        case "start_button":
+                            v = gamepad.xbox.buttons["start"] ? 1 : 0;
+                            break;
+                        case "back_button":
+                            v = gamepad.xbox.buttons["back"] ? 1 : 0;
+                            break;
+                        case "button_pressed":
+                            for (
+                                var j = 0;
+                                j < this._current_buttons.length;
+                                ++j
+                            ) {
+                                if (
+                                    this._current_buttons[j] &&
+                                    !this._previous_buttons[j]
+                                ) {
+                                    this.triggerSlot(
+                                        i,
+                                        GamepadInput.buttons[j]
+                                    );
+                                }
+                            }
+                            break;
+                        default:
+                            break;
+                    }
+                } else {
+                    //if no gamepad is connected, output 0
+                    switch (output.name) {
+                        case "button_pressed":
+                            break;
+                        case "left_axis":
+                        case "right_axis":
+                            v = GamepadInput.zero;
+                            break;
+                        default:
+                            v = 0;
+                    }
+                }
+                this.setOutputData(i, v);
+            }
+        }
+    };
+
+	GamepadInput.mapping = {a:0,b:1,x:2,y:3,lb:4,rb:5,lt:6,rt:7,back:8,start:9,ls:10,rs:11 };
+	GamepadInput.mapping_array = ["a","b","x","y","lb","rb","lt","rt","back","start","ls","rs"];
+
+    GamepadInput.prototype.getGamepad = function() {
+        var getGamepads =
+            navigator.getGamepads ||
+            navigator.webkitGetGamepads ||
+            navigator.mozGetGamepads;
+        if (!getGamepads) {
+            return null;
+        }
+        var gamepads = getGamepads.call(navigator);
+        var gamepad = null;
+
+        this._previous_buttons.set(this._current_buttons);
+
+        //pick the first connected
+        for (var i = this.properties.gamepad_index; i < 4; i++) {
+            if (!gamepads[i]) {
+                continue;
+            }
+            gamepad = gamepads[i];
+
+            //xbox controller mapping
+            var xbox = this.xbox_mapping;
+            if (!xbox) {
+                xbox = this.xbox_mapping = {
+                    axes: [],
+                    buttons: {},
+                    hat: "",
+                    hatmap: GamepadInput.CENTER
+                };
+            }
+
+            xbox.axes["lx"] = gamepad.axes[0];
+            xbox.axes["ly"] = gamepad.axes[1];
+            xbox.axes["rx"] = gamepad.axes[2];
+            xbox.axes["ry"] = gamepad.axes[3];
+            xbox.axes["ltrigger"] = gamepad.buttons[6].value;
+            xbox.axes["rtrigger"] = gamepad.buttons[7].value;
+            xbox.hat = "";
+            xbox.hatmap = GamepadInput.CENTER;
+
+            for (var j = 0; j < gamepad.buttons.length; j++) {
+                this._current_buttons[j] = gamepad.buttons[j].pressed;
+
+				if(j < 12)
+				{
+					xbox.buttons[ GamepadInput.mapping_array[j] ] = gamepad.buttons[j].pressed;
+					if(gamepad.buttons[j].was_pressed)
+						this.trigger( GamepadInput.mapping_array[j] + "_button_event" );
+				}
+				else //mapping of XBOX
+					switch ( j ) //I use a switch to ensure that a player with another gamepad could play
+					{
+						case 12:
+							if (gamepad.buttons[j].pressed) {
+								xbox.hat += "up";
+								xbox.hatmap |= GamepadInput.UP;
+							}
+							break;
+						case 13:
+							if (gamepad.buttons[j].pressed) {
+								xbox.hat += "down";
+								xbox.hatmap |= GamepadInput.DOWN;
+							}
+							break;
+						case 14:
+							if (gamepad.buttons[j].pressed) {
+								xbox.hat += "left";
+								xbox.hatmap |= GamepadInput.LEFT;
+							}
+							break;
+						case 15:
+							if (gamepad.buttons[j].pressed) {
+								xbox.hat += "right";
+								xbox.hatmap |= GamepadInput.RIGHT;
+							}
+							break;
+						case 16:
+							xbox.buttons["home"] = gamepad.buttons[j].pressed;
+							break;
+						default:
+					}
+            }
+            gamepad.xbox = xbox;
+            return gamepad;
+        }
+    };
+
+    GamepadInput.prototype.onDrawBackground = function(ctx) {
+        if (this.flags.collapsed) {
+            return;
+        }
+
+        //render gamepad state?
+        var la = this._left_axis;
+        var ra = this._right_axis;
+        ctx.strokeStyle = "#88A";
+        ctx.strokeRect(
+            (la[0] + 1) * 0.5 * this.size[0] - 4,
+            (la[1] + 1) * 0.5 * this.size[1] - 4,
+            8,
+            8
+        );
+        ctx.strokeStyle = "#8A8";
+        ctx.strokeRect(
+            (ra[0] + 1) * 0.5 * this.size[0] - 4,
+            (ra[1] + 1) * 0.5 * this.size[1] - 4,
+            8,
+            8
+        );
+        var h = this.size[1] / this._current_buttons.length;
+        ctx.fillStyle = "#AEB";
+        for (var i = 0; i < this._current_buttons.length; ++i) {
+            if (this._current_buttons[i]) {
+                ctx.fillRect(0, h * i, 6, h);
+            }
+        }
+    };
+
+    GamepadInput.prototype.onGetOutputs = function() {
+        return [
+            ["left_axis", "vec2"],
+            ["right_axis", "vec2"],
+            ["left_x_axis", "number"],
+            ["left_y_axis", "number"],
+            ["right_x_axis", "number"],
+            ["right_y_axis", "number"],
+            ["trigger_left", "number"],
+            ["trigger_right", "number"],
+            ["a_button", "number"],
+            ["b_button", "number"],
+            ["x_button", "number"],
+            ["y_button", "number"],
+            ["lb_button", "number"],
+            ["rb_button", "number"],
+            ["ls_button", "number"],
+            ["rs_button", "number"],
+            ["start_button", "number"],
+            ["back_button", "number"],
+            ["a_button_event", LiteGraph.EVENT ],
+            ["b_button_event", LiteGraph.EVENT ],
+            ["x_button_event", LiteGraph.EVENT ],
+            ["y_button_event", LiteGraph.EVENT ],
+            ["lb_button_event", LiteGraph.EVENT ],
+            ["rb_button_event", LiteGraph.EVENT ],
+            ["ls_button_event", LiteGraph.EVENT ],
+            ["rs_button_event", LiteGraph.EVENT ],
+            ["start_button_event", LiteGraph.EVENT ],
+            ["back_button_event", LiteGraph.EVENT ],
+            ["hat_left", "number"],
+            ["hat_right", "number"],
+            ["hat_up", "number"],
+            ["hat_down", "number"],
+            ["hat", "number"],
+            ["button_pressed", LiteGraph.EVENT]
+        ];
+    };
+
+    LiteGraph.registerNodeType("input/gamepad", GamepadInput);
+})(this);
+
+(function(global) {
+    var LiteGraph = global.LiteGraph;
+
+    //Converter
+    function Converter() {
+        this.addInput("in", "*");
+        this.size = [80, 30];
+    }
+
+    Converter.title = "Converter";
+    Converter.desc = "type A to type B";
+
+    Converter.prototype.onExecute = function() {
+        var v = this.getInputData(0);
+        if (v == null) {
+            return;
+        }
+
+        if (this.outputs) {
+            for (var i = 0; i < this.outputs.length; i++) {
+                var output = this.outputs[i];
+                if (!output.links || !output.links.length) {
+                    continue;
+                }
+
+                var result = null;
+                switch (output.name) {
+                    case "number":
+                        result = v.length ? v[0] : parseFloat(v);
+                        break;
+                    case "vec2":
+                    case "vec3":
+                    case "vec4":
+                        var result = null;
+                        var count = 1;
+                        switch (output.name) {
+                            case "vec2":
+                                count = 2;
+                                break;
+                            case "vec3":
+                                count = 3;
+                                break;
+                            case "vec4":
+                                count = 4;
+                                break;
+                        }
+
+                        var result = new Float32Array(count);
+                        if (v.length) {
+                            for (
+                                var j = 0;
+                                j < v.length && j < result.length;
+                                j++
+                            ) {
+                                result[j] = v[j];
+                            }
+                        } else {
+                            result[0] = parseFloat(v);
+                        }
+                        break;
+                }
+                this.setOutputData(i, result);
+            }
+        }
+    };
+
+    Converter.prototype.onGetOutputs = function() {
+        return [
+            ["number", "number"],
+            ["vec2", "vec2"],
+            ["vec3", "vec3"],
+            ["vec4", "vec4"]
+        ];
+    };
+
+    LiteGraph.registerNodeType("math/converter", Converter);
+
+    //Bypass
+    function Bypass() {
+        this.addInput("in");
+        this.addOutput("out");
+        this.size = [80, 30];
+    }
+
+    Bypass.title = "Bypass";
+    Bypass.desc = "removes the type";
+
+    Bypass.prototype.onExecute = function() {
+        var v = this.getInputData(0);
+        this.setOutputData(0, v);
+    };
+
+    LiteGraph.registerNodeType("math/bypass", Bypass);
+
+    function ToNumber() {
+        this.addInput("in");
+        this.addOutput("out");
+    }
+
+    ToNumber.title = "to Number";
+    ToNumber.desc = "Cast to number";
+
+    ToNumber.prototype.onExecute = function() {
+        var v = this.getInputData(0);
+        this.setOutputData(0, Number(v));
+    };
+
+    LiteGraph.registerNodeType("math/to_number", ToNumber);
+
+    function MathRange() {
+        this.addInput("in", "number", { locked: true });
+        this.addOutput("out", "number", { locked: true });
+
+        this.addProperty("in", 0);
+        this.addProperty("in_min", 0);
+        this.addProperty("in_max", 1);
+        this.addProperty("out_min", 0);
+        this.addProperty("out_max", 1);
+
+        this.size = [80, 30];
+    }
+
+    MathRange.title = "Range";
+    MathRange.desc = "Convert a number from one range to another";
+
+    MathRange.prototype.getTitle = function() {
+        if (this.flags.collapsed) {
+            return (this._last_v || 0).toFixed(2);
+        }
+        return this.title;
+    };
+
+    MathRange.prototype.onExecute = function() {
+        if (this.inputs) {
+            for (var i = 0; i < this.inputs.length; i++) {
+                var input = this.inputs[i];
+                var v = this.getInputData(i);
+                if (v === undefined) {
+                    continue;
+                }
+                this.properties[input.name] = v;
+            }
+        }
+
+        var v = this.properties["in"];
+        if (v === undefined || v === null || v.constructor !== Number) {
+            v = 0;
+        }
+
+        var in_min = this.properties.in_min;
+        var in_max = this.properties.in_max;
+        var out_min = this.properties.out_min;
+        var out_max = this.properties.out_max;
+
+        this._last_v =
+            ((v - in_min) / (in_max - in_min)) * (out_max - out_min) + out_min;
+        this.setOutputData(0, this._last_v);
+    };
+
+    MathRange.prototype.onDrawBackground = function(ctx) {
+        //show the current value
+        if (this._last_v) {
+            this.outputs[0].label = this._last_v.toFixed(3);
+        } else {
+            this.outputs[0].label = "?";
+        }
+    };
+
+    MathRange.prototype.onGetInputs = function() {
+        return [
+            ["in_min", "number"],
+            ["in_max", "number"],
+            ["out_min", "number"],
+            ["out_max", "number"]
+        ];
+    };
+
+    LiteGraph.registerNodeType("math/range", MathRange);
+
+    function MathRand() {
+        this.addOutput("value", "number");
+        this.addProperty("min", 0);
+        this.addProperty("max", 1);
+        this.size = [80, 30];
+    }
+
+    MathRand.title = "Rand";
+    MathRand.desc = "Random number";
+
+    MathRand.prototype.onExecute = function() {
+        if (this.inputs) {
+            for (var i = 0; i < this.inputs.length; i++) {
+                var input = this.inputs[i];
+                var v = this.getInputData(i);
+                if (v === undefined) {
+                    continue;
+                }
+                this.properties[input.name] = v;
+            }
+            console.log( "Image loaded, size: " + that.img.width + "x" + that.img.height );
+            this.dirty = true;
+            that.boxcolor = "#9F9";
+            that.setDirtyCanvas(true);
+        };
+        this.img.onerror = function() {
+			console.log("error loading the image:" + url);
+		}
+    };
+
+    MathRand.prototype.onDrawBackground = function(ctx) {
+        //show the current value
+        this.outputs[0].label = (this._last_v || 0).toFixed(3);
+    };
+
+    MathRand.prototype.onGetInputs = function() {
+        return [["min", "number"], ["max", "number"]];
+    };
+
+    LiteGraph.registerNodeType("math/rand", MathRand);
+
+    //basic continuous noise
+    function MathNoise() {
+        this.addInput("in", "number");
+        this.addOutput("out", "number");
+        this.addProperty("min", 0);
+        this.addProperty("max", 1);
+        this.addProperty("smooth", true);
+        this.size = [90, 30];
+    }
+
+    MathNoise.title = "Noise";
+    MathNoise.desc = "Random number with temporal continuity";
+    MathNoise.data = null;
+
+    MathNoise.getValue = function(f, smooth) {
+        if (!MathNoise.data) {
+            MathNoise.data = new Float32Array(1024);
+            for (var i = 0; i < MathNoise.data.length; ++i) {
+                MathNoise.data[i] = Math.random();
+            }
+        }
+        f = f % 1024;
+        if (f < 0) {
+            f += 1024;
+        }
+        var f_min = Math.floor(f);
+        var f = f - f_min;
+        var r1 = MathNoise.data[f_min];
+        var r2 = MathNoise.data[f_min == 1023 ? 0 : f_min + 1];
+        if (smooth) {
+            f = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+        }
+        return r1 * (1 - f) + r2 * f;
+    };
+
+    MathNoise.prototype.onExecute = function() {
+        var f = this.getInputData(0) || 0;
+        var r = MathNoise.getValue(f, this.properties.smooth);
+        var min = this.properties.min;
+        var max = this.properties.max;
+        this._last_v = r * (max - min) + min;
+        this.setOutputData(0, this._last_v);
+    };
+
+    MathNoise.prototype.onDrawBackground = function(ctx) {
+        //show the current value
+        this.outputs[0].label = (this._last_v || 0).toFixed(3);
+    };
+
+    LiteGraph.registerNodeType("math/noise", MathNoise);
+
+    //generates spikes every random time
+    function MathSpikes() {
+        this.addOutput("out", "number");
+        this.addProperty("min_time", 1);
+        this.addProperty("max_time", 2);
+        this.addProperty("duration", 0.2);
+        this.size = [90, 30];
+        this._remaining_time = 0;
+        this._blink_time = 0;
+    }
+
+    MathSpikes.title = "Spikes";
+    MathSpikes.desc = "spike every random time";
+
+    MathSpikes.prototype.onExecute = function() {
+        var dt = this.graph.elapsed_time; //in secs
+
+        this._remaining_time -= dt;
+        this._blink_time -= dt;
+
+        var v = 0;
+        if (this._blink_time > 0) {
+            var f = this._blink_time / this.properties.duration;
+            v = 1 / (Math.pow(f * 8 - 4, 4) + 1);
+        }
+
+        if (this._remaining_time < 0) {
+            this._remaining_time =
+                Math.random() *
+                    (this.properties.max_time - this.properties.min_time) +
+                this.properties.min_time;
+            this._blink_time = this.properties.duration;
+            this.boxcolor = "#FFF";
+        } else {
+            this.boxcolor = "#000";
+        }
+        this.setOutputData(0, v);
+    };
+
+    LiteGraph.registerNodeType("math/spikes", MathSpikes);
+
+    //Math clamp
+    function MathClamp() {
+        this.addInput("in", "number");
+        this.addOutput("out", "number");
+        this.size = [80, 30];
+        this.addProperty("min", 0);
+        this.addProperty("max", 1);
+    }
+
+    MathClamp.title = "Clamp";
+    MathClamp.desc = "Clamp number between min and max";
+    //MathClamp.filter = "shader";
+
+    MathClamp.prototype.onExecute = function() {
+        var v = this.getInputData(0);
+        if (v == null) {
+            return;
+        }
+        v = Math.max(this.properties.min, v);
+        v = Math.min(this.properties.max, v);
+        this.setOutputData(0, v);
+    };
+
+    MathClamp.prototype.getCode = function(lang) {
+        var code = "";
+        if (this.isInputConnected(0)) {
+            code +=
+                "clamp({{0}}," +
+                this.properties.min +
+                "," +
+                this.properties.max +
+                ")";
+        }
+        return code;
+    };
+
+    LiteGraph.registerNodeType("math/clamp", MathClamp);
+
+    //Math ABS
+    function MathLerp() {
+        this.properties = { f: 0.5 };
+        this.addInput("A", "number");
+        this.addInput("B", "number");
+
+        this.addOutput("out", "number");
+    }
+
+    MathLerp.title = "Lerp";
+    MathLerp.desc = "Linear Interpolation";
+
+    MathLerp.prototype.onExecute = function() {
+        var v1 = this.getInputData(0);
+        if (v1 == null) {
+            v1 = 0;
+        }
+        var v2 = this.getInputData(1);
+        if (v2 == null) {
+            v2 = 0;
+        }
+
+        var f = this.properties.f;
+
+        var _f = this.getInputData(2);
+        if (_f !== undefined) {
+            f = _f;
+        }
+
+        this.setOutputData(0, v1 * (1 - f) + v2 * f);
+    };
+
+    MathLerp.prototype.onGetInputs = function() {
+        return [["f", "number"]];
+    };
+
+    LiteGraph.registerNodeType("math/lerp", MathLerp);
+
+    //Math ABS
+    function MathAbs() {
+        this.addInput("in", "number");
+        this.addOutput("out", "number");
+        this.size = [80, 30];
+    }
+
+    MathAbs.title = "Abs";
+    MathAbs.desc = "Absolute";
+
+    MathAbs.prototype.onExecute = function() {
+        var v = this.getInputData(0);
+        if (v == null) {
+            return;
+        }
+        this.setOutputData(0, Math.abs(v));
+    };
+
+    LiteGraph.registerNodeType("math/abs", MathAbs);
+
+    //Math Floor
+    function MathFloor() {
+        this.addInput("in", "number");
+        this.addOutput("out", "number");
+        this.size = [80, 30];
+    }
+
+    MathFloor.title = "Floor";
+    MathFloor.desc = "Floor number to remove fractional part";
+
+    MathFloor.prototype.onExecute = function() {
+        var v = this.getInputData(0);
+        if (v == null) {
+            return;
+        }
+        this.setOutputData(0, Math.floor(v));
+    };
+
+    LiteGraph.registerNodeType("math/floor", MathFloor);
+
+    //Math frac
+    function MathFrac() {
+        this.addInput("in", "number");
+        this.addOutput("out", "number");
+        this.size = [80, 30];
+    }
+
+    MathFrac.title = "Frac";
+    MathFrac.desc = "Returns fractional part";
+
+    MathFrac.prototype.onExecute = function() {
+        var v = this.getInputData(0);
+        if (v == null) {
+            return;
+        }
+        this.setOutputData(0, v % 1);
+    };
+
+    LiteGraph.registerNodeType("math/frac", MathFrac);
+
+    //Math Floor
+    function MathSmoothStep() {
+        this.addInput("in", "number");
+        this.addOutput("out", "number");
+        this.size = [80, 30];
+        this.properties = { A: 0, B: 1 };
+    }
+
+    MathSmoothStep.title = "Smoothstep";
+    MathSmoothStep.desc = "Smoothstep";
+
+    MathSmoothStep.prototype.onExecute = function() {
+        var v = this.getInputData(0);
+        if (v === undefined) {
+            return;
+        }
+
+        var edge0 = this.properties.A;
+        var edge1 = this.properties.B;
+
+        // Scale, bias and saturate x to 0..1 range
+        v = Math.clamp((v - edge0) / (edge1 - edge0), 0.0, 1.0);
+        // Evaluate polynomial
+        v = v * v * (3 - 2 * v);
+
+        this.setOutputData(0, v);
+    };
+
+    LiteGraph.registerNodeType("math/smoothstep", MathSmoothStep);
+
+    //Math scale
+    function MathScale() {
+        this.addInput("in", "number", { label: "" });
+        this.addOutput("out", "number", { label: "" });
+        this.size = [80, 30];
+        this.addProperty("factor", 1);
+    }
+
+    MathScale.title = "Scale";
+    MathScale.desc = "v * factor";
+
+    MathScale.prototype.onExecute = function() {
+        var value = this.getInputData(0);
+        if (value != null) {
+            this.setOutputData(0, value * this.properties.factor);
+        }
+    };
+
+    LiteGraph.registerNodeType("math/scale", MathScale);
+
+	//Gate
+	function Gate() {
+		this.addInput("v","boolean");
+		this.addInput("A");
+		this.addInput("B");
+		this.addOutput("out");
+	}
+
+	Gate.title = "Gate";
+	Gate.desc = "if v is true, then outputs A, otherwise B";
+
+	Gate.prototype.onExecute = function() {
+		var v = this.getInputData(0);
+		this.setOutputData(0, this.getInputData( v ? 1 : 2 ));
+	};
+
+	LiteGraph.registerNodeType("math/gate", Gate);
+
+
+    //Math Average
+    function MathAverageFilter() {
+        this.addInput("in", "number");
+        this.addOutput("out", "number");
+        this.size = [80, 30];
+        this.addProperty("samples", 10);
+        this._values = new Float32Array(10);
+        this._current = 0;
+    }
+
+    MathAverageFilter.title = "Average";
+    MathAverageFilter.desc = "Average Filter";
+
+    MathAverageFilter.prototype.onExecute = function() {
+        var v = this.getInputData(0);
+        if (v == null) {
+            v = 0;
+        }
+
+        var num_samples = this._values.length;
+
+        this._values[this._current % num_samples] = v;
+        this._current += 1;
+        if (this._current > num_samples) {
+            this._current = 0;
+        }
+
+        var avr = 0;
+        for (var i = 0; i < num_samples; ++i) {
+            avr += this._values[i];
+        }
+
+        this.setOutputData(0, avr / num_samples);
+    };
+
+    MathAverageFilter.prototype.onPropertyChanged = function(name, value) {
+        if (value < 1) {
+            value = 1;
+        }
+        this.properties.samples = Math.round(value);
+        var old = this._values;
+
+        if (name == "scale") {
+            this.properties[name] = parseFloat(value);
+            if (this.properties[name] == 0) {
+                console.error("Error in scale");
+                this.properties[name] = 1.0;
+            }
+        } else {
+            this._values.set(old.subarray(0, this._values.length));
+        }
+    };
+
+    LiteGraph.registerNodeType("math/average", MathAverageFilter);
+
+    //Math
+    function MathTendTo() {
+        this.addInput("in", "number");
+        this.addOutput("out", "number");
+        this.addProperty("factor", 0.1);
+        this.size = [80, 30];
+        this._value = null;
+    }
+
+    MathTendTo.title = "TendTo";
+    MathTendTo.desc = "moves the output value always closer to the input";
+
+    MathTendTo.prototype.onExecute = function() {
+        var v = this.getInputData(0);
+        if (v == null) {
+            v = 0;
+        }
+        var f = this.properties.factor;
+        if (this._value == null) {
+            this._value = v;
+        } else {
+            this._value = this._value * (1 - f) + v * f;
+        }
+        this.setOutputData(0, this._value);
+    };
+
+    LiteGraph.registerNodeType("math/tendTo", MathTendTo);
+
+    //Math operation
+    function MathOperation() {
+        this.addInput("A", "number");
+        this.addInput("B", "number");
+        this.addOutput("=", "number");
+        this.addProperty("A", 1);
+        this.addProperty("B", 1);
+        this.addProperty("OP", "+", "enum", { values: MathOperation.values });
+    }
+
+    MathOperation.values = ["+", "-", "*", "/", "%", "^", "max", "min"];
+
+	MathOperation.title = "Operation";
+    MathOperation.desc = "Easy math operators";
+    MathOperation["@OP"] = {
+        type: "enum",
+        title: "operation",
+        values: MathOperation.values
+    };
+    MathOperation.size = [100, 60];
+
+    MathOperation.prototype.getTitle = function() {
+		if(this.properties.OP == "max" || this.properties.OP == "min")
+			return this.properties.OP + "(A,B)";
+        return "A " + this.properties.OP + " B";
+    };
+
+    MathOperation.prototype.setValue = function(v) {
+        if (typeof v == "string") {
+            v = parseFloat(v);
+        }
+        this.properties["value"] = v;
+    };
+
+    MathOperation.prototype.onExecute = function() {
+        var A = this.getInputData(0);
+        var B = this.getInputData(1);
+        if (A != null) {
+            this.properties["A"] = A;
+        } else {
+            A = this.properties["A"];
+        }
+
+        if (B != null) {
+            this.properties["B"] = B;
+        } else {
+            B = this.properties["B"];
+        }
+
+        var result = 0;
+        switch (this.properties.OP) {
+            case "+":
+                result = A + B;
+                break;
+            case "-":
+                result = A - B;
+                break;
+            case "x":
+            case "X":
+            case "*":
+                result = A * B;
+                break;
+            case "/":
+                result = A / B;
+                break;
+            case "%":
+                result = A % B;
+                break;
+            case "^":
+                result = Math.pow(A, B);
+                break;
+            case "max":
+                result = Math.max(A, B);
+                break;
+            case "min":
+                result = Math.min(A, B);
+                break;
+            default:
+                console.warn("Unknown operation: " + this.properties.OP);
+        }
+        this.setOutputData(0, result);
+    };
+
+    MathOperation.prototype.onDrawBackground = function(ctx) {
+        if (this.flags.collapsed) {
+            return;
+        }
+
+        ctx.font = "40px Arial";
+        ctx.fillStyle = "#666";
+        ctx.textAlign = "center";
+        ctx.fillText(
+            this.properties.OP,
+            this.size[0] * 0.5,
+            (this.size[1] + LiteGraph.NODE_TITLE_HEIGHT) * 0.5
+        );
+        ctx.textAlign = "left";
+    };
+
+    LiteGraph.registerNodeType("math/operation", MathOperation);
+
+    LiteGraph.registerSearchboxExtra("math/operation", "MAX", {
+        properties: {OP:"max"},
+        title: "MAX()"
+    });
+
+    LiteGraph.registerSearchboxExtra("math/operation", "MIN", {
+        properties: {OP:"min"},
+        title: "MIN()"
+    });
+
+    //Math compare
+    function MathCompare() {
+        this.addInput("A", "number");
+        this.addInput("B", "number");
+        this.addOutput("A==B", "boolean");
+        this.addOutput("A!=B", "boolean");
+        this.addProperty("A", 0);
+        this.addProperty("B", 0);
+    }
+
+    MathCompare.title = "Compare";
+    MathCompare.desc = "compares between two values";
+
+    MathCompare.prototype.onExecute = function() {
+        var A = this.getInputData(0);
+        var B = this.getInputData(1);
+        if (A !== undefined) {
+            this.properties["A"] = A;
+        } else {
+            A = this.properties["A"];
+        }
+
+        if (B !== undefined) {
+            this.properties["B"] = B;
+        } else {
+            B = this.properties["B"];
+        }
+
+        for (var i = 0, l = this.outputs.length; i < l; ++i) {
+            var output = this.outputs[i];
+            if (!output.links || !output.links.length) {
+                continue;
+            }
+            var value;
+            switch (output.name) {
+                case "A==B":
+                    value = A == B;
+                    break;
+                case "A!=B":
+                    value = A != B;
+                    break;
+                case "A>B":
+                    value = A > B;
+                    break;
+                case "A<B":
+                    value = A < B;
+                    break;
+                case "A<=B":
+                    value = A <= B;
+                    break;
+                case "A>=B":
+                    value = A >= B;
+                    break;
+            }
+            this.setOutputData(i, value);
+        }
+    };
+
+    MathCompare.prototype.onGetOutputs = function() {
+        return [
+            ["A==B", "boolean"],
+            ["A!=B", "boolean"],
+            ["A>B", "boolean"],
+            ["A<B", "boolean"],
+            ["A>=B", "boolean"],
+            ["A<=B", "boolean"]
+        ];
+    };
+
+    LiteGraph.registerNodeType("math/compare", MathCompare);
+
+    LiteGraph.registerSearchboxExtra("math/compare", "==", {
+        outputs: [["A==B", "boolean"]],
+        title: "A==B"
+    });
+    LiteGraph.registerSearchboxExtra("math/compare", "!=", {
+        outputs: [["A!=B", "boolean"]],
+        title: "A!=B"
+    });
+    LiteGraph.registerSearchboxExtra("math/compare", ">", {
+        outputs: [["A>B", "boolean"]],
+        title: "A>B"
+    });
+    LiteGraph.registerSearchboxExtra("math/compare", "<", {
+        outputs: [["A<B", "boolean"]],
+        title: "A<B"
+    });
+    LiteGraph.registerSearchboxExtra("math/compare", ">=", {
+        outputs: [["A>=B", "boolean"]],
+        title: "A>=B"
+    });
+    LiteGraph.registerSearchboxExtra("math/compare", "<=", {
+        outputs: [["A<=B", "boolean"]],
+        title: "A<=B"
+    });
+
+    function MathCondition() {
+        this.addInput("A", "number");
+        this.addInput("B", "number");
+        this.addOutput("true", "boolean");
+        this.addOutput("false", "boolean");
+        this.addProperty("A", 1);
+        this.addProperty("B", 1);
+        this.addProperty("OP", ">", "enum", { values: MathCondition.values });
+
+        this.size = [80, 60];
+    }
+
+    MathCondition.values = [">", "<", "==", "!=", "<=", ">=", "||", "&&" ];
+    MathCondition["@OP"] = {
+        type: "enum",
+        title: "operation",
+        values: MathCondition.values
+    };
+
+    MathCondition.title = "Condition";
+    MathCondition.desc = "evaluates condition between A and B";
+
+    MathCondition.prototype.getTitle = function() {
+        return "A " + this.properties.OP + " B";
+    };
+
+    MathCondition.prototype.onExecute = function() {
+        var A = this.getInputData(0);
+        if (A === undefined) {
+            A = this.properties.A;
+        } else {
+            this.properties.A = A;
+        }
+
+        var B = this.getInputData(1);
+        if (B === undefined) {
+            B = this.properties.B;
+        } else {
+            this.properties.B = B;
+        }
+
+        var result = true;
+        switch (this.properties.OP) {
+            case ">":
+                result = A > B;
+                break;
+            case "<":
+                result = A < B;
+                break;
+            case "==":
+                result = A == B;
+                break;
+            case "!=":
+                result = A != B;
+                break;
+            case "<=":
+                result = A <= B;
+                break;
+            case ">=":
+                result = A >= B;
+                break;
+            case "||":
+                result = A || B;
+                break;
+            case "&&":
+                result = A && B;
+                break;
+        }
+
+        this.setOutputData(0, result);
+        this.setOutputData(1, !result);
+    };
+
+    LiteGraph.registerNodeType("math/condition", MathCondition);
+
+    function MathAccumulate() {
+        this.addInput("inc", "number");
+        this.addOutput("total", "number");
+        this.addProperty("increment", 1);
+        this.addProperty("value", 0);
+    }
+
+    MathAccumulate.title = "Accumulate";
+    MathAccumulate.desc = "Increments a value every time";
+
+		var pos = url.substr(0,10).indexOf(":");
+		var protocol = "";
+		if(pos != -1)
+			protocol = url.substr(0,pos);
+
+		var host = "";
+		if(protocol)
+		{
+			host = url.substr(0,url.indexOf("/",protocol.length + 3));
+			host = host.substr(protocol.length+3);
+		}
+
+        if (
+            this.properties.use_proxy &&
+            protocol &&
+            LiteGraph.proxy &&
+			host != location.host
+        ) {
+            url = LiteGraph.proxy + url.substr(url.indexOf(":") + 3);
+        }
+
+        var inc = this.getInputData(0);
+        if (inc !== null) {
+            this.properties.value += inc;
+        } else {
+            this.properties.value += this.properties.increment;
+        }
+        this.setOutputData(0, this.properties.value);
+    };
+
+    LiteGraph.registerNodeType("math/accumulate", MathAccumulate);
+
+        var that = this;
+        this._video.addEventListener("loadedmetadata", function(e) {
+            //onload
+            console.log("Duration: " + this.duration + " seconds");
+            console.log("Size: " + this.videoWidth + "," + this.videoHeight);
+            that.setDirtyCanvas(true);
+            this.width = this.videoWidth;
+            this.height = this.videoHeight;
+        });
+        this._video.addEventListener("progress", function(e) {
+            //onload
+            console.log("video loading...");
+        });
+        this._video.addEventListener("error", function(e) {
+            console.error("Error loading video: " + this.src);
+            if (this.error) {
+                switch (this.error.code) {
+                    case this.error.MEDIA_ERR_ABORTED:
+                        console.error("You stopped the video.");
+                        break;
+                    case this.error.MEDIA_ERR_NETWORK:
+                        console.error("Network error - please try again later.");
+                        break;
+                    case this.error.MEDIA_ERR_DECODE:
+                        console.error("Video is broken..");
+                        break;
+                    case this.error.MEDIA_ERR_SRC_NOT_SUPPORTED:
+                        console.error("Sorry, your browser can't play this video.");
+                        break;
+                }
+            }
+        });
+
+        this._video.addEventListener("ended", function(e) {
+            console.log("Video Ended.");
+            this.play(); //loop
+        });
+
+    MathTrigonometry.title = "Trigonometry";
+    MathTrigonometry.desc = "Sin Cos Tan";
+    //MathTrigonometry.filter = "shader";
+
+    MathTrigonometry.prototype.onExecute = function() {
+        var v = this.getInputData(0);
+        if (v == null) {
+            v = 0;
+        }
+
+        return true;
+    };
+
+    ImageVideo.prototype.play = function() {
+        if (this._video && this._video.videoWidth ) { //is loaded
+            this._video.play();
+        }
+        var offset = this.properties["offset"];
+        slot = this.findInputSlot("offset");
+        if (slot != -1) {
+            offset = this.getInputData(slot);
+        }
+
+        for (var i = 0, l = this.outputs.length; i < l; ++i) {
+            var output = this.outputs[i];
+            var value;
+            switch (output.name) {
+                case "sin":
+                    value = Math.sin(v);
+                    break;
+                case "cos":
+                    value = Math.cos(v);
+                    break;
+                case "tan":
+                    value = Math.tan(v);
+                    break;
+                case "asin":
+                    value = Math.asin(v);
+                    break;
+                case "acos":
+                    value = Math.acos(v);
+                    break;
+                case "atan":
+                    value = Math.atan(v);
+                    break;
+            }
+            this.setOutputData(i, amplitude * value + offset);
+        }
+    };
+
+    MathTrigonometry.prototype.onGetInputs = function() {
+        return [["v", "number"], ["amplitude", "number"], ["offset", "number"]];
+    };
+
+    ImageVideo.prototype.pause = function() {
+        if (!this._video) {
+            return;
+        }
+        console.log("Video paused");
+        this._video.pause();
+    };
+
+    LiteGraph.registerNodeType("math/trigonometry", MathTrigonometry);
+
+    LiteGraph.registerSearchboxExtra("math/trigonometry", "SIN()", {
+        outputs: [["sin", "number"]],
+        title: "SIN()"
+    });
+    LiteGraph.registerSearchboxExtra("math/trigonometry", "COS()", {
+        outputs: [["cos", "number"]],
+        title: "COS()"
+    });
+    LiteGraph.registerSearchboxExtra("math/trigonometry", "TAN()", {
+        outputs: [["tan", "number"]],
+        title: "TAN()"
+    });
+
+    //math library for safe math operations without eval
+    function MathFormula() {
+        this.addInput("x", "number");
+        this.addInput("y", "number");
+        this.addOutput("", "number");
+        this.properties = { x: 1.0, y: 1.0, formula: "x+y" };
+        this.code_widget = this.addWidget(
+            "text",
+            "F(x,y)",
+            this.properties.formula,
+            function(v, canvas, node) {
+                node.properties.formula = v;
+            }
+        );
+        this.addWidget("toggle", "allow", LiteGraph.allow_scripts, function(v) {
+            LiteGraph.allow_scripts = v;
+        });
+        this._func = null;
+    }
+
+    MathFormula.title = "Formula";
+    MathFormula.desc = "Compute formula";
+    MathFormula.size = [160, 100];
+
+    MathAverageFilter.prototype.onPropertyChanged = function(name, value) {
+        if (name == "formula") {
+            this.code_widget.value = value;
+        }
+    };
+
+    MathFormula.prototype.onExecute = function() {
+        if (!LiteGraph.allow_scripts) {
+            return;
+        }
+
+        var x = this.getInputData(0);
+        var y = this.getInputData(1);
+        if (x != null) {
+            this.properties["x"] = x;
+        } else {
+            x = this.properties["x"];
+        }
+
+        if (y != null) {
+            this.properties["y"] = y;
+        } else {
+            y = this.properties["y"];
+        }
+
+        var f = this.properties["formula"];
+
+        var value;
+        try {
+            if (!this._func || this._func_code != this.properties.formula) {
+                this._func = new Function(
+                    "x",
+                    "y",
+                    "TIME",
+                    "return " + this.properties.formula
+                );
+                this._func_code = this.properties.formula;
+            }
+            value = this._func(x, y, this.graph.globaltime);
+            this.boxcolor = null;
+        } catch (err) {
+            this.boxcolor = "red";
+        }
+        this.setOutputData(0, value);
+    };
+
+    MathFormula.prototype.getTitle = function() {
+        return this._func_code || "Formula";
+    };
+
+    MathFormula.prototype.onDrawBackground = function() {
+        var f = this.properties["formula"];
+        if (this.outputs && this.outputs.length) {
+            this.outputs[0].label = f;
+        }
+    };
+
+    LiteGraph.registerNodeType("math/formula", MathFormula);
+
+    function Math3DVec2ToXY() {
+        this.addInput("vec2", "vec2");
+        this.addOutput("x", "number");
+        this.addOutput("y", "number");
+    }
+
+    Math3DVec2ToXY.title = "Vec2->XY";
+    Math3DVec2ToXY.desc = "vector 2 to components";
+
+    Math3DVec2ToXY.prototype.onExecute = function() {
+        var v = this.getInputData(0);
+        if (v == null) {
+            return;
+        }
+
+        this.setOutputData(0, v[0]);
+        this.setOutputData(1, v[1]);
+    };
+
+    LiteGraph.registerNodeType("math3d/vec2-to-xy", Math3DVec2ToXY);
+
+    function Math3DXYToVec2() {
+        this.addInputs([["x", "number"], ["y", "number"]]);
+        this.addOutput("vec2", "vec2");
+        this.properties = { x: 0, y: 0 };
+        this._data = new Float32Array(2);
+    }
+
+    Math3DXYToVec2.title = "XY->Vec2";
+    Math3DXYToVec2.desc = "components to vector2";
+
+    Math3DXYToVec2.prototype.onExecute = function() {
+        var x = this.getInputData(0);
+        if (x == null) {
+            x = this.properties.x;
+        }
+        var y = this.getInputData(1);
+        if (y == null) {
+            y = this.properties.y;
+        }
+
+        var data = this._data;
+        data[0] = x;
+        data[1] = y;
+
+        this.setOutputData(0, data);
+    };
+
+    LiteGraph.registerNodeType("math3d/xy-to-vec2", Math3DXYToVec2);
+
+    function Math3DVec3ToXYZ() {
+        this.addInput("vec3", "vec3");
+        this.addOutput("x", "number");
+        this.addOutput("y", "number");
+        this.addOutput("z", "number");
+    }
+
+    Math3DVec3ToXYZ.title = "Vec3->XYZ";
+    Math3DVec3ToXYZ.desc = "vector 3 to components";
+
+    Math3DVec3ToXYZ.prototype.onExecute = function() {
+        var v = this.getInputData(0);
+        if (v == null) {
+            return;
+        }
+
+        this.setOutputData(0, v[0]);
+        this.setOutputData(1, v[1]);
+        this.setOutputData(2, v[2]);
+    };
+
+    LiteGraph.registerNodeType("math3d/vec3-to-xyz", Math3DVec3ToXYZ);
+
+    function Math3DXYZToVec3() {
+        this.addInputs([["x", "number"], ["y", "number"], ["z", "number"]]);
+        this.addOutput("vec3", "vec3");
+        this.properties = { x: 0, y: 0, z: 0 };
+        this._data = new Float32Array(3);
+    }
+
+    Math3DXYZToVec3.title = "XYZ->Vec3";
+    Math3DXYZToVec3.desc = "components to vector3";
+
+    Math3DXYZToVec3.prototype.onExecute = function() {
+        var x = this.getInputData(0);
+        if (x == null) {
+            x = this.properties.x;
+        }
+        var y = this.getInputData(1);
+        if (y == null) {
+            y = this.properties.y;
+        }
+        var z = this.getInputData(2);
+        if (z == null) {
+            z = this.properties.z;
+        }
+
+        var data = this._data;
+        data[0] = x;
+        data[1] = y;
+        data[2] = z;
+
+        this.setOutputData(0, data);
+    };
+
+    LiteGraph.registerNodeType("math3d/xyz-to-vec3", Math3DXYZToVec3);
+
+    function Math3DVec4ToXYZW() {
+        this.addInput("vec4", "vec4");
+        this.addOutput("x", "number");
+        this.addOutput("y", "number");
+        this.addOutput("z", "number");
+        this.addOutput("w", "number");
+    }
+
+    Math3DVec4ToXYZW.title = "Vec4->XYZW";
+    Math3DVec4ToXYZW.desc = "vector 4 to components";
+
+    Math3DVec4ToXYZW.prototype.onExecute = function() {
+        var v = this.getInputData(0);
+        if (v == null) {
+            return;
+        }
+
+        this.setOutputData(0, v[0]);
+        this.setOutputData(1, v[1]);
+        this.setOutputData(2, v[2]);
+        this.setOutputData(3, v[3]);
+    };
+
+    LiteGraph.registerNodeType("math3d/vec4-to-xyzw", Math3DVec4ToXYZW);
+
+    function Math3DXYZWToVec4() {
+        this.addInputs([
+            ["x", "number"],
+            ["y", "number"],
+            ["z", "number"],
+            ["w", "number"]
+        ]);
+        this.addOutput("vec4", "vec4");
+        this.properties = { x: 0, y: 0, z: 0, w: 0 };
+        this._data = new Float32Array(4);
+    }
+
+    Math3DXYZWToVec4.title = "XYZW->Vec4";
+    Math3DXYZWToVec4.desc = "components to vector4";
+
+    Math3DXYZWToVec4.prototype.onExecute = function() {
+        var x = this.getInputData(0);
+        if (x == null) {
+            x = this.properties.x;
+        }
+        var y = this.getInputData(1);
+        if (y == null) {
+            y = this.properties.y;
+        }
+        var z = this.getInputData(2);
+        if (z == null) {
+            z = this.properties.z;
+        }
+        var w = this.getInputData(3);
+        if (w == null) {
+            w = this.properties.w;
+        }
+
+        var data = this._data;
+        data[0] = x;
+        data[1] = y;
+        data[2] = z;
+        data[3] = w;
+
+        this.setOutputData(0, data);
+    };
+
+    LiteGraph.registerNodeType("math3d/xyzw-to-vec4", Math3DXYZWToVec4);
+
+    //if glMatrix is installed...
+    if (global.glMatrix) {
+        function Math3DQuaternion() {
+            this.addOutput("quat", "quat");
+            this.properties = { x: 0, y: 0, z: 0, w: 1 };
+            this._value = quat.create();
+        }
+
+        Math3DQuaternion.title = "Quaternion";
+        Math3DQuaternion.desc = "quaternion";
+
+        Math3DQuaternion.prototype.onExecute = function() {
+            this._value[0] = this.properties.x;
+            this._value[1] = this.properties.y;
+            this._value[2] = this.properties.z;
+            this._value[3] = this.properties.w;
+            this.setOutputData(0, this._value);
+        };
+
+        LiteGraph.registerNodeType("math3d/quaternion", Math3DQuaternion);
+
+        function Math3DRotation() {
+            this.addInputs([["degrees", "number"], ["axis", "vec3"]]);
+            this.addOutput("quat", "quat");
+            this.properties = { angle: 90.0, axis: vec3.fromValues(0, 1, 0) };
+
+            this._value = quat.create();
+        }
+
+        Math3DRotation.title = "Rotation";
+        Math3DRotation.desc = "quaternion rotation";
+
+        Math3DRotation.prototype.onExecute = function() {
+            var angle = this.getInputData(0);
+            if (angle == null) {
+                angle = this.properties.angle;
+            }
+            var axis = this.getInputData(1);
+            if (axis == null) {
+                axis = this.properties.axis;
+            }
+
+            var R = quat.setAxisAngle(this._value, axis, angle * 0.0174532925);
+            this.setOutputData(0, R);
+        };
+
+        LiteGraph.registerNodeType("math3d/rotation", Math3DRotation);
+
+        //Math3D rotate vec3
+        function Math3DRotateVec3() {
+            this.addInputs([["vec3", "vec3"], ["quat", "quat"]]);
+            this.addOutput("result", "vec3");
+            this.properties = { vec: [0, 0, 1] };
+        }
+
+        Math3DRotateVec3.title = "Rot. Vec3";
+        Math3DRotateVec3.desc = "rotate a point";
+
+        Math3DRotateVec3.prototype.onExecute = function() {
+            var vec = this.getInputData(0);
+            if (vec == null) {
+                vec = this.properties.vec;
+            }
+            var quat = this.getInputData(1);
+            if (quat == null) {
+                this.setOutputData(vec);
+            } else {
+                this.setOutputData(
+                    0,
+                    vec3.transformQuat(vec3.create(), vec, quat)
+                );
+            }
+        };
+
+        LiteGraph.registerNodeType("math3d/rotate_vec3", Math3DRotateVec3);
+
+        function Math3DMultQuat() {
+            this.addInputs([["A", "quat"], ["B", "quat"]]);
+            this.addOutput("A*B", "quat");
+
+            this._value = quat.create();
+        }
+
+        Math3DMultQuat.title = "Mult. Quat";
+        Math3DMultQuat.desc = "rotate quaternion";
+
+        Math3DMultQuat.prototype.onExecute = function() {
+            var A = this.getInputData(0);
+            if (A == null) {
+                return;
+            }
+            var B = this.getInputData(1);
+            if (B == null) {
+                return;
+            }
+
+            var R = quat.multiply(this._value, A, B);
+            this.setOutputData(0, R);
+        };
+
+        LiteGraph.registerNodeType("math3d/mult-quat", Math3DMultQuat);
+
+        function Math3DQuatSlerp() {
+            this.addInputs([
+                ["A", "quat"],
+                ["B", "quat"],
+                ["factor", "number"]
+            ]);
+            this.addOutput("slerp", "quat");
+            this.addProperty("factor", 0.5);
+
+            this._value = quat.create();
+        }
+
+        Math3DQuatSlerp.title = "Quat Slerp";
+        Math3DQuatSlerp.desc = "quaternion spherical interpolation";
+
+        Math3DQuatSlerp.prototype.onExecute = function() {
+            var A = this.getInputData(0);
+            if (A == null) {
+                return;
+            }
+            var B = this.getInputData(1);
+            if (B == null) {
+                return;
+            }
+            var factor = this.properties.factor;
+            if (this.getInputData(2) != null) {
+                factor = this.getInputData(2);
+            }
+
+            var R = quat.slerp(this._value, A, B, factor);
+            this.setOutputData(0, R);
+        };
+
+        LiteGraph.registerNodeType("math3d/quat-slerp", Math3DQuatSlerp);
+    } //glMatrix
+})(this);
+
+(function(global) {
+    var LiteGraph = global.LiteGraph;
+
+
+	function Math3DMat4()
+	{
+        this.addInput("T", "vec3");
+        this.addInput("R", "vec3");
+        this.addInput("S", "vec3");
+        this.addOutput("mat4", "mat4");
+		this.properties = {
+			"T":[0,0,0],
+			"R":[0,0,0],
+			"S":[1,1,1],
+			R_in_degrees: true
+		};
+		this._result = mat4.create();
+		this._must_update = true;
+	}
+
+	Math3DMat4.title = "mat4";
+	Math3DMat4.temp_quat = new Float32Array([0,0,0,1]);
+	Math3DMat4.temp_mat4 = new Float32Array(16);
+	Math3DMat4.temp_vec3 = new Float32Array(3);
+
+	Math3DMat4.prototype.onPropertyChanged = function(name, value)
+	{
+		this._must_update = true;
+	}
+
+	Math3DMat4.prototype.onExecute = function()
+	{
+		var M = this._result;
+		var Q = Math3DMat4.temp_quat;
+		var temp_mat4 = Math3DMat4.temp_mat4;
+		var temp_vec3 = Math3DMat4.temp_vec3;
+
+		var T = this.getInputData(0);
+		var R = this.getInputData(1);
+		var S = this.getInputData(2);
+
+		if( this._must_update || T || R || S )
+		{
+			T = T || this.properties.T;
+			R = R || this.properties.R;
+			S = S || this.properties.S;
+			mat4.identity( M );
+			mat4.translate( M, M, T );
+			if(this.properties.R_in_degrees)
+			{
+				temp_vec3.set( R );
+				vec3.scale(temp_vec3,temp_vec3,DEG2RAD);
+				quat.fromEuler( Q, temp_vec3 );
+			}
+			else
+				quat.fromEuler( Q, R );
+			mat4.fromQuat( temp_mat4, Q );
+			mat4.multiply( M, M, temp_mat4 );
+			mat4.scale( M, M, S );
+		}
+
+		this.setOutputData(0, M);
+	}
+
+    LiteGraph.registerNodeType("math3d/mat4", Math3DMat4);
+
+    //Math 3D operation
+    function Math3DOperation() {
+        this.addInput("A", "number,vec3");
+        this.addInput("B", "number,vec3");
+        this.addOutput("=", "vec3");
+        this.addProperty("OP", "+", "enum", { values: Math3DOperation.values });
+		this._result = vec3.create();
+    }
+
+    Math3DOperation.values = ["+", "-", "*", "/", "%", "^", "max", "min"];
+
+	Math3DOperation.title = "Operation";
+    Math3DOperation.desc = "Easy math 3D operators";
+    Math3DOperation["@OP"] = {
+        type: "enum",
+        title: "operation",
+        values: Math3DOperation.values
+    };
+    Math3DOperation.size = [100, 60];
+
+    Math3DOperation.prototype.getTitle = function() {
+		if(this.properties.OP == "max" || this.properties.OP == "min" )
+			return this.properties.OP + "(A,B)";
+        return "A " + this.properties.OP + " B";
+    };
+
+    Math3DOperation.prototype.onExecute = function() {
+        var A = this.getInputData(0);
+        var B = this.getInputData(1);
+		if(A == null || B == null)
+			return;
+		if(A.constructor === Number)
+			A = [A,A,A];
+		if(B.constructor === Number)
+			B = [B,B,B];
+
+        var result = this._result;
+        switch (this.properties.OP) {
+            case "+":
+                result = vec3.add(result,A,B);
+                break;
+            case "-":
+                result = vec3.sub(result,A,B);
+                break;
+            case "x":
+            case "X":
+            case "*":
+                result = vec3.mul(result,A,B);
+                break;
+            case "/":
+                result = vec3.div(result,A,B);
+                break;
+            case "%":
+                result[0] = A[0]%B[0];
+                result[1] = A[1]%B[1];
+                result[2] = A[2]%B[2];
+                break;
+            case "^":
+                result[0] = Math.pow(A[0],B[0]);
+                result[1] = Math.pow(A[1],B[1]);
+                result[2] = Math.pow(A[2],B[2]);
+                break;
+            case "max":
+                result[0] = Math.max(A[0],B[0]);
+                result[1] = Math.max(A[1],B[1]);
+                result[2] = Math.max(A[2],B[2]);
+                break;
+            case "min":
+                result[0] = Math.min(A[0],B[0]);
+                result[1] = Math.min(A[1],B[1]);
+                result[2] = Math.min(A[2],B[2]);
+                break;
+            default:
+                console.warn("Unknown operation: " + this.properties.OP);
+        }
+        this.setOutputData(0, result);
+    };
+
+    Math3DOperation.prototype.onDrawBackground = function(ctx) {
+        if (this.flags.collapsed) {
+            return;
+        }
+
+        ctx.font = "40px Arial";
+        ctx.fillStyle = "#666";
+        ctx.textAlign = "center";
+        ctx.fillText(
+            this.properties.OP,
+            this.size[0] * 0.5,
+            (this.size[1] + LiteGraph.NODE_TITLE_HEIGHT) * 0.5
+        );
+        ctx.textAlign = "left";
+    };
+
+    LiteGraph.registerNodeType("math3d/operation", Math3DOperation);
+
+    function Math3DVec3Scale() {
+        this.addInput("in", "vec3");
+        this.addInput("f", "number");
+        this.addOutput("out", "vec3");
+        this.properties = { f: 1 };
+        this._data = new Float32Array(3);
+    }
+
+    Math3DVec3Scale.title = "vec3_scale";
+    Math3DVec3Scale.desc = "scales the components of a vec3";
+
+    Math3DVec3Scale.prototype.onExecute = function() {
+        var v = this.getInputData(0);
+        if (v == null) {
+            return;
+        }
+        var f = this.getInputData(1);
+        if (f == null) {
+            f = this.properties.f;
+        }
+
+        var data = this._data;
+        data[0] = v[0] * f;
+        data[1] = v[1] * f;
+        data[2] = v[2] * f;
+        this.setOutputData(0, data);
+    };
+
+    LiteGraph.registerNodeType("math3d/vec3-scale", Math3DVec3Scale);
+
+    function Math3DVec3Length() {
+        this.addInput("in", "vec3");
+        this.addOutput("out", "number");
+    }
+
+    Math3DVec3Length.title = "vec3_length";
+    Math3DVec3Length.desc = "returns the module of a vector";
+
+    Math3DVec3Length.prototype.onExecute = function() {
+        var v = this.getInputData(0);
+        if (v == null) {
+            return;
+        }
+        var dist = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+        this.setOutputData(0, dist);
+    };
+
+    LiteGraph.registerNodeType("math3d/vec3-length", Math3DVec3Length);
+
+    function Math3DVec3Normalize() {
+        this.addInput("in", "vec3");
+        this.addOutput("out", "vec3");
+        this._data = new Float32Array(3);
+    }
+
+    Math3DVec3Normalize.title = "vec3_normalize";
+    Math3DVec3Normalize.desc = "returns the vector normalized";
+
+    Math3DVec3Normalize.prototype.onExecute = function() {
+        var v = this.getInputData(0);
+        if (v == null) {
+            return;
+        }
+        var dist = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+        var data = this._data;
+        data[0] = v[0] / dist;
+        data[1] = v[1] / dist;
+        data[2] = v[2] / dist;
+
+        this.setOutputData(0, data);
+    };
+
+    LiteGraph.registerNodeType("math3d/vec3-normalize", Math3DVec3Normalize);
+
+    function Math3DVec3Lerp() {
+        this.addInput("A", "vec3");
+        this.addInput("B", "vec3");
+        this.addInput("f", "vec3");
+        this.addOutput("out", "vec3");
+        this.properties = { f: 0.5 };
+        this._data = new Float32Array(3);
+    }
+
+    Math3DVec3Lerp.title = "vec3_lerp";
+    Math3DVec3Lerp.desc = "returns the interpolated vector";
+
+    Math3DVec3Lerp.prototype.onExecute = function() {
+        var A = this.getInputData(0);
+        if (A == null) {
+            return;
+        }
+        var B = this.getInputData(1);
+        if (B == null) {
+            return;
+        }
+        var f = this.getInputOrProperty("f");
+
+        var data = this._data;
+        data[0] = A[0] * (1 - f) + B[0] * f;
+        data[1] = A[1] * (1 - f) + B[1] * f;
+        data[2] = A[2] * (1 - f) + B[2] * f;
+
+        this.setOutputData(0, data);
+    };
+
+    LiteGraph.registerNodeType("math3d/vec3-lerp", Math3DVec3Lerp);
+
+    function Math3DVec3Dot() {
+        this.addInput("A", "vec3");
+        this.addInput("B", "vec3");
+        this.addOutput("out", "number");
+    }
+
+    Math3DVec3Dot.title = "vec3_dot";
+    Math3DVec3Dot.desc = "returns the dot product";
+
+    Math3DVec3Dot.prototype.onExecute = function() {
+        var A = this.getInputData(0);
+        if (A == null) {
+            return;
+        }
+        var B = this.getInputData(1);
+        if (B == null) {
+            return;
+        }
+
+        var dot = A[0] * B[0] + A[1] * B[1] + A[2] * B[2];
+        this.setOutputData(0, dot);
+    };
+
+    LiteGraph.registerNodeType("math3d/vec3-dot", Math3DVec3Dot);
+
+    //if glMatrix is installed...
+    if (global.glMatrix) {
+        function Math3DQuaternion() {
+            this.addOutput("quat", "quat");
+            this.properties = { x: 0, y: 0, z: 0, w: 1, normalize: false };
+            this._value = quat.create();
+        }
+
+        Math3DQuaternion.title = "Quaternion";
+        Math3DQuaternion.desc = "quaternion";
+
+        Math3DQuaternion.prototype.onExecute = function() {
+            this._value[0] = this.getInputOrProperty("x");
+            this._value[1] = this.getInputOrProperty("y");
+            this._value[2] = this.getInputOrProperty("z");
+            this._value[3] = this.getInputOrProperty("w");
+            if (this.properties.normalize) {
+                quat.normalize(this._value, this._value);
+            }
+            this.setOutputData(0, this._value);
+        };
+
+        Math3DQuaternion.prototype.onGetInputs = function() {
+            return [
+                ["x", "number"],
+                ["y", "number"],
+                ["z", "number"],
+                ["w", "number"]
+            ];
+        };
+
+        LiteGraph.registerNodeType("math3d/quaternion", Math3DQuaternion);
+
+        function Math3DRotation() {
+            this.addInputs([["degrees", "number"], ["axis", "vec3"]]);
+            this.addOutput("quat", "quat");
+            this.properties = { angle: 90.0, axis: vec3.fromValues(0, 1, 0) };
+
+            this._value = quat.create();
+        }
+
+        Math3DRotation.title = "Rotation";
+        Math3DRotation.desc = "quaternion rotation";
+
+        Math3DRotation.prototype.onExecute = function() {
+            var angle = this.getInputData(0);
+            if (angle == null) {
+                angle = this.properties.angle;
+            }
+            var axis = this.getInputData(1);
+            if (axis == null) {
+                axis = this.properties.axis;
+            }
+
+            var R = quat.setAxisAngle(this._value, axis, angle * 0.0174532925);
+            this.setOutputData(0, R);
+        };
+
+        LiteGraph.registerNodeType("math3d/rotation", Math3DRotation);
+
+        //Math3D rotate vec3
+        function Math3DRotateVec3() {
+            this.addInputs([["vec3", "vec3"], ["quat", "quat"]]);
+            this.addOutput("result", "vec3");
+            this.properties = { vec: [0, 0, 1] };
+        }
+
+        Math3DRotateVec3.title = "Rot. Vec3";
+        Math3DRotateVec3.desc = "rotate a point";
+
+        Math3DRotateVec3.prototype.onExecute = function() {
+            var vec = this.getInputData(0);
+            if (vec == null) {
+                vec = this.properties.vec;
+            }
+            var quat = this.getInputData(1);
+            if (quat == null) {
+                this.setOutputData(vec);
+            } else {
+                this.setOutputData(
+                    0,
+                    vec3.transformQuat(vec3.create(), vec, quat)
+                );
+            }
+        };
+
+        LiteGraph.registerNodeType("math3d/rotate_vec3", Math3DRotateVec3);
+
+        function Math3DMultQuat() {
+            this.addInputs([["A", "quat"], ["B", "quat"]]);
+            this.addOutput("A*B", "quat");
+
+            this._value = quat.create();
+        }
+
+        Math3DMultQuat.title = "Mult. Quat";
+        Math3DMultQuat.desc = "rotate quaternion";
+
+        Math3DMultQuat.prototype.onExecute = function() {
+            var A = this.getInputData(0);
+            if (A == null) {
+                return;
+            }
+            var B = this.getInputData(1);
+            if (B == null) {
+                return;
+            }
+
+            var R = quat.multiply(this._value, A, B);
+            this.setOutputData(0, R);
+        };
+
+        LiteGraph.registerNodeType("math3d/mult-quat", Math3DMultQuat);
+
+        function Math3DQuatSlerp() {
+            this.addInputs([
+                ["A", "quat"],
+                ["B", "quat"],
+                ["factor", "number"]
+            ]);
+            this.addOutput("slerp", "quat");
+            this.addProperty("factor", 0.5);
+
+            this._value = quat.create();
+        }
+
+        Math3DQuatSlerp.title = "Quat Slerp";
+        Math3DQuatSlerp.desc = "quaternion spherical interpolation";
+
+        Math3DQuatSlerp.prototype.onExecute = function() {
+            var A = this.getInputData(0);
+            if (A == null) {
+                return;
+            }
+            var B = this.getInputData(1);
+            if (B == null) {
+                return;
+            }
+            var factor = this.properties.factor;
+            if (this.getInputData(2) != null) {
+                factor = this.getInputData(2);
+            }
+
+            var R = quat.slerp(this._value, A, B, factor);
+            this.setOutputData(0, R);
+        };
+
+        LiteGraph.registerNodeType("math3d/quat-slerp", Math3DQuatSlerp);
+
+
+        //Math3D rotate vec3
+        function Math3DRemapRange() {
+            this.addInput("vec3", "vec3");
+            this.addOutput("remap", "vec3");
+			this.addOutput("clamped", "vec3");
+            this.properties = { clamp: true, range_min: [-1, -1, 0], range_max: [1, 1, 0], target_min: [-1,-1,0], target_max:[1,1,0] };
+			this._value = vec3.create();
+			this._clamped = vec3.create();
+        }
+
+        Math3DRemapRange.title = "Remap Range";
+        Math3DRemapRange.desc = "remap a 3D range";
+
+        Math3DRemapRange.prototype.onExecute = function() {
+            var vec = this.getInputData(0);
+			if(vec)
+				this._value.set(vec);
+			var range_min = this.properties.range_min;
+			var range_max = this.properties.range_max;
+			var target_min = this.properties.target_min;
+			var target_max = this.properties.target_max;
+
+			for(var i = 0; i < 3; ++i)
+			{
+				var r = range_max[i] - range_min[i];
+				this._clamped[i] = Math.clamp( this._value[i], range_min[i], range_max[i] );
+				if(r == 0)
+				{
+					this._value[i] = (target_min[i] + target_max[i]) * 0.5;
+					continue;
+				}
+
+				var n = (this._value[i] - range_min[i]) / r;
+				if(this.properties.clamp)
+					n = Math.clamp(n,0,1);
+				var t = target_max[i] - target_min[i];
+				this._value[i] = target_min[i] + n * t;
+			}
+
+			this.setOutputData(0,this._value);
+			this.setOutputData(1,this._clamped);
+        };
+
+        LiteGraph.registerNodeType("math3d/remap_range", Math3DRemapRange);
+
+
+
+    } //glMatrix
+	else
+		console.warn("No glmatrix found, some Math3D nodes may not work");
+
+})(this);
+
+//basic nodes
+(function(global) {
+    var LiteGraph = global.LiteGraph;
+
+    function toString(a) {
+        return String(a);
+    }
+
+		this.properties.code = LGraphTextureShader.pixel_shader;
+		this._uniforms = { u_value: 1, u_color: vec4.create(), in_texture: 0, texSize: vec2.create(), time: 0 };
+	}
+
+	LGraphTextureShader.title = "Shader";
+	LGraphTextureShader.desc = "Texture shader";
+	LGraphTextureShader.widgets_info = {
+		code: { type: "code", lang: "glsl" },
+		precision: { widget: "combo", values: LGraphTexture.MODE_VALUES }
+	};
+
+    LiteGraph.wrapFunctionAsNode(
+        "string/compare",
+        compare,
         ["String", "String"],
         "Boolean"
     );
@@ -15281,14 +17905,16 @@ if (typeof exports != "undefined") {
         return a;
     }
 
-    LiteGraph.wrapFunctionAsNode(
-        "string/toFixed",
-        toFixed,
-        ["Number"],
-        "String",
-        { precision: 0 }
-    );
-})(this);
+		this._shader_code = this.properties.code;
+		this._shader = new GL.Shader( Shader.SCREEN_VERTEX_SHADER, this.properties.code );
+		if (!this._shader) {
+			this.boxcolor = "red";
+			return null;
+		} else {
+			this.boxcolor = "green";
+		}
+		return this._shader;
+	};
 
 (function(global) {
     var LiteGraph = global.LiteGraph;
@@ -15345,9 +17971,22 @@ if (typeof exports != "undefined") {
         this.addInput("seq");
         this.addOutput("out");
 
-        this.index = 0;
-        this.values = this.properties.sequence.split(",");
-    }
+	LGraphTextureShader.pixel_shader =
+"precision highp float;\n\
+\n\
+varying vec2 v_coord;\n\
+uniform float time; //time in seconds\n\
+uniform vec2 texSize; //tex resolution\n\
+uniform float u_value;\n\
+uniform vec4 u_color;\n\n\
+void main() {\n\
+	vec2 uv = v_coord;\n\
+	vec3 color = vec3(0.0);\n\
+	//your code here\n\
+	color.xy=uv;\n\n\
+	gl_FragColor = vec4(color, 1.0);\n\
+}\n\
+";
 
     Sequence.title = "Sequence";
     Sequence.desc = "select one element from a sequence from a string";
@@ -17335,10 +19974,10 @@ if (typeof exports != "undefined") {
 			precision: LGraphTexture.DEFAULT
 		};
 
-		this._uniforms = { 
-			u_texture: 0, 
-			u_textureB: 1, 
-			u_factor: 1, 
+		this._uniforms = {
+			u_texture: 0,
+			u_textureB: 1,
+			u_factor: 1,
 			u_scale: vec2.create(),
 			u_offset: vec2.create()
 		};
@@ -17847,7 +20486,7 @@ if (typeof exports != "undefined") {
 		this.addOutput("avg", "vec4");
 		this.addOutput("lum", "number");
 		this.properties = {
-			use_previous_frame: true, //to avoid stalls 
+			use_previous_frame: true, //to avoid stalls
 			high_quality: false //to use as much pixels as possible
 		};
 
@@ -18005,7 +20644,7 @@ if (typeof exports != "undefined") {
 		this.addOutput("max", "vec4");
 		this.properties = {
 			mode: "max",
-			use_previous_frame: true //to avoid stalls 
+			use_previous_frame: true //to avoid stalls
 		};
 
 		this._uniforms = {
@@ -18085,7 +20724,7 @@ if (typeof exports != "undefined") {
 		{
 			var tex = this._textures_chain[i];
 
-			prev = tex;				
+			prev = tex;
 		}
 
 		var shader = LGraphTextureMinMax._shader;
@@ -21186,7 +23825,7 @@ void main(void){\n\
 		if (name == "code" )
 			this.compileCode( value );
 	}
-	
+
 	LGraphTextureCanvas2D.prototype.compileCode = function( code ) {
 		this._func = null;
 		if( !LiteGraph.allow_scripts )
@@ -21430,7 +24069,7 @@ void main(void){\n\
 		u_view: view_matrix,
 		u_projection: projection_matrix,
 		u_viewprojection: viewprojection_matrix,
-		u_model: model_matrix 
+		u_model: model_matrix
 	};
 
 	LiteGraph.LGraphRender = {
@@ -21714,7 +24353,7 @@ void main(void){\n\
 			points[i] = x * radius;
 			points[i+1] = y * radius;
 			points[i+2] = z * radius;
-		}			
+		}
 	}
 
 	LGraphPoints3D.generateHemisphere = function (points, size, radius)
@@ -21763,7 +24402,7 @@ void main(void){\n\
 			points[i] = r * sinPhi * cosTheta;
 			points[i+1] = r * sinPhi * sinTheta;
 			points[i+2] = r * cosPhi;
-		}	
+		}
 	}
 
 	function findRandomTriangle( areas, f )
@@ -21783,15 +24422,15 @@ void main(void){\n\
 			imid = ((imax + imin)*0.5)|0;
 			var t = areas[ imid ];
 			if( t == f )
-				return imid; 
+				return imid;
 			if( imin == (imax - 1) )
 				return imin;
 			if (t < f)
 				imin = imid;
-			else         
+			else
 				imax = imid;
 		}
-		return imid;		
+		return imid;
 	}
 
 	LGraphPoints3D.generateFromObject = function( points, normals, size, obj, evenly )
@@ -21842,7 +24481,7 @@ void main(void){\n\
 				var s = (aL + bL+ cL) / 2;
 				total_area += Math.sqrt(s * (s - aL) * (s - bL) * (s - cL));
 				areas[i] = total_area;
-			}			
+			}
 			for(var i = 0; i < num_triangles; ++i) //normalize
 				areas[i] /= total_area;
 		}
@@ -21967,7 +24606,7 @@ void main(void){\n\
 
 			switch(this.properties.mode)
 			{
-				case LGraphPointsToInstances.NORMAL: 
+				case LGraphPointsToInstances.NORMAL:
 					mat4.setTranslation( m, point );
 					if(normals)
 					{
@@ -21984,10 +24623,10 @@ void main(void){\n\
 						mat4.setTranslation( m, point );
 					}
 					break;
-				case LGraphPointsToInstances.VERTICAL: 
+				case LGraphPointsToInstances.VERTICAL:
 					mat4.setTranslation( m, point );
 					break;
-				case LGraphPointsToInstances.SPHERICAL: 
+				case LGraphPointsToInstances.SPHERICAL:
 					front.set( point );
 					vec3.normalize( front, front );
 					vec3.cross( right, UP, front );
@@ -22118,7 +24757,7 @@ void main(void){\n\
 
 		for(var i = 0, l = vertices.length; i < l; i+=3)
 		{
-			temp[0] = old_vertices[i]; temp[1] = old_vertices[i+1]; temp[2] = old_vertices[i+2]; 
+			temp[0] = old_vertices[i]; temp[1] = old_vertices[i+1]; temp[2] = old_vertices[i+2];
 			mat4.multiplyVec3( temp, model, temp );
 			vertices[i] = temp[0]; vertices[i+1] = temp[1]; vertices[i+2] = temp[2];
 		}
@@ -22134,7 +24773,7 @@ void main(void){\n\
 			var old_normals = geometry.normals;
 			for(var i = 0, l = normals.length; i < l; i+=3)
 			{
-				temp[0] = old_normals[i]; temp[1] = old_normals[i+1]; temp[2] = old_normals[i+2]; 
+				temp[0] = old_normals[i]; temp[1] = old_normals[i+1]; temp[2] = old_normals[i+2];
 				mat4.multiplyVec3( temp, normal_model, temp );
 				normals[i] = temp[0]; normals[i+1] = temp[1]; normals[i+2] = temp[2];
 			}
@@ -22334,7 +24973,7 @@ void main(void){\n\
 
 		try
 		{
-			this.func = new Function("V","I","T", this.properties.code); 
+			this.func = new Function("V","I","T", this.properties.code);
 			this.boxcolor = "#AFA";
 			this.must_update = true;
 		}
@@ -22535,7 +25174,7 @@ function LGraphGeometryDisplace() {
 			var probability = this.properties.probability;
 			var max_connections = this.properties.max_connections;
 			var indices = [];
-			
+
 			for(var i = 0; i < l; i+=3)
 			{
 				var x = vertices[i];
@@ -22821,7 +25460,7 @@ function LGraphGeometryDisplace() {
 
 		switch (type)
 		{
-			case 1: //CUBE: 
+			case 1: //CUBE:
 				this._mesh = GL.Mesh.cube({size: size, normals:true,coords:true});
 				break;
 			case 2: //PLANE:
@@ -22933,7 +25572,7 @@ function LGraphGeometryDisplace() {
 		var shader = null;
 
 		var texture = this.getInputData(2);
-		
+
 		if(texture)
 		{
 			shader = gl.shaders["textured_points"];
@@ -23137,7 +25776,7 @@ function LGraphGeometryDisplace() {
 		var shader = null;
 
 		var texture = this.getInputData(2);
-		
+
 		if(texture)
 		{
 			shader = gl.shaders["textured_points"];
@@ -23422,7 +26061,7 @@ function LGraphGeometryDisplace() {
 		var depth = this.getInputData(1);
 		var camera = this.getInputData(2);
 
-		if(!tex || !depth || !camera) 
+		if(!tex || !depth || !camera)
 		{
 			this.setOutputData(0, tex);
 			return;
@@ -23430,7 +26069,7 @@ function LGraphGeometryDisplace() {
 
 		var precision = gl.UNSIGNED_BYTE;
 		if(this.properties.high_precision)
-			precision = gl.half_float_ext ? gl.HALF_FLOAT_OES : gl.FLOAT;			
+			precision = gl.half_float_ext ? gl.HALF_FLOAT_OES : gl.FLOAT;
 		if(!this._temp_texture || this._temp_texture.type != precision ||
 			this._temp_texture.width != tex.width || this._temp_texture.height != tex.height)
 			this._temp_texture = new GL.Texture( tex.width, tex.height, { type: precision, format: gl.RGBA, filter: gl.LINEAR });
@@ -24497,7 +27136,7 @@ function LGraphGeometryDisplace() {
 	for (var i = 0; i < this.output_ports.size; ++i) {
 		  var output = this.output_ports.get(i);
 		  if(!output)
-			  continue; 
+			  continue;
 		console.log( "Output port [type:'" + output.type + "'] id:'" + output.id +
 		  "' manufacturer:'" + output.manufacturer + "' name:'" + output.name +
 		  "' version:'" + output.version + "'" );
@@ -26976,6 +29615,5993 @@ LiteGraph.registerNodeType("audio/waveShaper", LGAudioWaveShaper);
 
     LGAudio.createAudioNodeWrapper(LGAudioScript);
 
+	function LGraphTextureCanvas2D() {
+		this.addInput("v");
+		this.addOutput("out", "Texture");
+		this.properties = {
+			code: LGraphTextureCanvas2D.default_code,
+			width: 512,
+			height: 512,
+			clear: true,
+			precision: LGraphTexture.DEFAULT,
+			use_html_canvas: false
+		};
+		this._func = null;
+		this._temp_texture = null;
+		this.compileCode();
+	}
+
+    function LGAudioDestination() {
+        this.audionode = LGAudio.getAudioContext().destination;
+        this.addInput("in", "audio");
+    }
+
+	LGraphTextureCanvas2D.default_code = "//vars: canvas,ctx,time\nctx.fillStyle='red';\nctx.fillRect(0,0,50,50);\n";
+
+	LGraphTextureCanvas2D.widgets_info = {
+		precision: { widget: "combo", values: LGraphTexture.MODE_VALUES },
+		code: { type: "code" },
+		width: { type: "Number", precision: 0, step: 1 },
+		height: { type: "Number", precision: 0, step: 1 }
+	};
+
+//event related nodes
+(function(global) {
+    var LiteGraph = global.LiteGraph;
+
+    function LGWebSocket() {
+        this.size = [60, 20];
+        this.addInput("send", LiteGraph.ACTION);
+        this.addOutput("received", LiteGraph.EVENT);
+        this.addInput("in", 0);
+        this.addOutput("out", 0);
+        this.properties = {
+            url: "",
+            room: "lgraph", //allows to filter messages,
+            only_send_changes: true
+        };
+        this._ws = null;
+        this._last_sent_data = [];
+        this._last_received_data = [];
+    }
+
+    LGWebSocket.title = "WebSocket";
+    LGWebSocket.desc = "Send data through a websocket";
+
+    LGWebSocket.prototype.onPropertyChanged = function(name, value) {
+        if (name == "url") {
+            this.connectSocket();
+        }
+    };
+
+    LGWebSocket.prototype.onExecute = function() {
+        if (!this._ws && this.properties.url) {
+            this.connectSocket();
+        }
+
+        if (!this._ws || this._ws.readyState != WebSocket.OPEN) {
+            return;
+        }
+
+        var room = this.properties.room;
+        var only_changes = this.properties.only_send_changes;
+
+        for (var i = 1; i < this.inputs.length; ++i) {
+            var data = this.getInputData(i);
+            if (data == null) {
+                continue;
+            }
+            var json;
+            try {
+                json = JSON.stringify({
+                    type: 0,
+                    room: room,
+                    channel: i,
+                    data: data
+                });
+            } catch (err) {
+                continue;
+            }
+            if (only_changes && this._last_sent_data[i] == json) {
+                continue;
+            }
+
+            this._last_sent_data[i] = json;
+            this._ws.send(json);
+        }
+
+        for (var i = 1; i < this.outputs.length; ++i) {
+            this.setOutputData(i, this._last_received_data[i]);
+        }
+
+        if (this.boxcolor == "#AFA") {
+            this.boxcolor = "#6C6";
+        }
+    };
+
+    LGWebSocket.prototype.connectSocket = function() {
+        var that = this;
+        var url = this.properties.url;
+        if (url.substr(0, 2) != "ws") {
+            url = "ws://" + url;
+        }
+        this._ws = new WebSocket(url);
+        this._ws.onopen = function() {
+            console.log("ready");
+            that.boxcolor = "#6C6";
+        };
+        this._ws.onmessage = function(e) {
+            that.boxcolor = "#AFA";
+            var data = JSON.parse(e.data);
+            if (data.room && data.room != this.properties.room) {
+                return;
+            }
+            if (e.data.type == 1) {
+                if (
+                    data.data.object_class &&
+                    LiteGraph[data.data.object_class]
+                ) {
+                    var obj = null;
+                    try {
+                        obj = new LiteGraph[data.data.object_class](data.data);
+                        that.triggerSlot(0, obj);
+                    } catch (err) {
+                        return;
+                    }
+                } else {
+                    that.triggerSlot(0, data.data);
+                }
+            } else {
+                that._last_received_data[e.data.channel || 0] = data.data;
+            }
+        };
+        this._ws.onerror = function(e) {
+            console.log("couldnt connect to websocket");
+            that.boxcolor = "#E88";
+        };
+        this._ws.onclose = function(e) {
+            console.log("connection closed");
+            that.boxcolor = "#000";
+        };
+    };
+
+    LGWebSocket.prototype.send = function(data) {
+        if (!this._ws || this._ws.readyState != WebSocket.OPEN) {
+            return;
+        }
+        this._ws.send(JSON.stringify({ type: 1, msg: data }));
+    };
+
+    LGWebSocket.prototype.onAction = function(action, param) {
+        if (!this._ws || this._ws.readyState != WebSocket.OPEN) {
+            return;
+        }
+        this._ws.send({
+            type: 1,
+            room: this.properties.room,
+            action: action,
+            data: param
+        });
+    };
+
+    LGWebSocket.prototype.onGetInputs = function() {
+        return [["in", 0]];
+    };
+
+    LGWebSocket.prototype.onGetOutputs = function() {
+        return [["out", 0]];
+    };
+
+    LiteGraph.registerNodeType("network/websocket", LGWebSocket);
+
+    //It is like a websocket but using the SillyServer.js server that bounces packets back to all clients connected:
+    //For more information: https://github.com/jagenjo/SillyServer.js
+
+    function LGSillyClient() {
+        //this.size = [60,20];
+        this.room_widget = this.addWidget(
+            "text",
+            "Room",
+            "lgraph",
+            this.setRoom.bind(this)
+        );
+        this.addWidget(
+            "button",
+            "Reconnect",
+            null,
+            this.connectSocket.bind(this)
+        );
+
+        this.addInput("send", LiteGraph.ACTION);
+        this.addOutput("received", LiteGraph.EVENT);
+        this.addInput("in", 0);
+        this.addOutput("out", 0);
+        this.properties = {
+            url: "tamats.com:55000",
+            room: "lgraph",
+            only_send_changes: true
+        };
+
+        this._server = null;
+        this.connectSocket();
+        this._last_sent_data = [];
+        this._last_received_data = [];
+
+		if(typeof(SillyClient) == "undefined")
+			console.warn("remember to add SillyClient.js to your project: https://tamats.com/projects/sillyserver/src/sillyclient.js");
+    }
+
+    LGSillyClient.title = "SillyClient";
+    LGSillyClient.desc = "Connects to SillyServer to broadcast messages";
+
+    LGSillyClient.prototype.onPropertyChanged = function(name, value) {
+        if (name == "room") {
+            this.room_widget.value = value;
+        }
+        this.connectSocket();
+    };
+
+    LGSillyClient.prototype.setRoom = function(room_name) {
+        this.properties.room = room_name;
+        this.room_widget.value = room_name;
+        this.connectSocket();
+    };
+
+    //force label names
+    LGSillyClient.prototype.onDrawForeground = function() {
+        for (var i = 1; i < this.inputs.length; ++i) {
+            var slot = this.inputs[i];
+            slot.label = "in_" + i;
+        }
+        for (var i = 1; i < this.outputs.length; ++i) {
+            var slot = this.outputs[i];
+            slot.label = "out_" + i;
+        }
+    };
+
+    LGSillyClient.prototype.onExecute = function() {
+        if (!this._server || !this._server.is_connected) {
+            return;
+        }
+
+        var only_send_changes = this.properties.only_send_changes;
+
+        for (var i = 1; i < this.inputs.length; ++i) {
+            var data = this.getInputData(i);
+			var prev_data = this._last_sent_data[i];
+            if (data != null) {
+                if (only_send_changes)
+				{
+					var is_equal = true;
+					if( data && data.length && prev_data && prev_data.length == data.length && data.constructor !== String)
+					{
+						for(var j = 0; j < data.length; ++j)
+							if( prev_data[j] != data[j] )
+							{
+								is_equal = false;
+								break;
+							}
+					}
+					else if(this._last_sent_data[i] != data)
+						is_equal = false;
+					if(is_equal)
+							continue;
+                }
+                this._server.sendMessage({ type: 0, channel: i, data: data });
+				if( data.length && data.constructor !== String )
+				{
+					if( this._last_sent_data[i] )
+					{
+						this._last_sent_data[i].length = data.length;
+						for(var j = 0; j < data.length; ++j)
+							this._last_sent_data[i][j] = data[j];
+					}
+					else //create
+					{
+						if(data.constructor === Array)
+							this._last_sent_data[i] = data.concat();
+						else
+							this._last_sent_data[i] = new data.constructor( data );
+					}
+				}
+				else
+	                this._last_sent_data[i] = data; //should be cloned
+            }
+        }
+
+        for (var i = 1; i < this.outputs.length; ++i) {
+            this.setOutputData(i, this._last_received_data[i]);
+        }
+
+        if (this.boxcolor == "#AFA") {
+            this.boxcolor = "#6C6";
+        }
+    };
+
+    LGSillyClient.prototype.connectSocket = function() {
+        var that = this;
+        if (typeof SillyClient == "undefined") {
+            if (!this._error) {
+                console.error(
+                    "SillyClient node cannot be used, you must include SillyServer.js"
+                );
+            }
+            this._error = true;
+            return;
+        }
+
+        this._server = new SillyClient();
+        this._server.on_ready = function() {
+            console.log("ready");
+            that.boxcolor = "#6C6";
+        };
+        this._server.on_message = function(id, msg) {
+            var data = null;
+            try {
+                data = JSON.parse(msg);
+            } catch (err) {
+                return;
+            }
+
+            if (data.type == 1) {
+                //EVENT slot
+                if (
+                    data.data.object_class &&
+                    LiteGraph[data.data.object_class]
+                ) {
+                    var obj = null;
+                    try {
+                        obj = new LiteGraph[data.data.object_class](data.data);
+                        that.triggerSlot(0, obj);
+                    } catch (err) {
+                        return;
+                    }
+                } else {
+                    that.triggerSlot(0, data.data);
+                }
+            } //for FLOW slots
+            else {
+                that._last_received_data[data.channel || 0] = data.data;
+            }
+            that.boxcolor = "#AFA";
+        };
+        this._server.on_error = function(e) {
+            console.log("couldnt connect to websocket");
+            that.boxcolor = "#E88";
+        };
+        this._server.on_close = function(e) {
+            console.log("connection closed");
+            that.boxcolor = "#000";
+        };
+
+        if (this.properties.url && this.properties.room) {
+            try {
+                this._server.connect(this.properties.url, this.properties.room);
+            } catch (err) {
+                console.error("SillyServer error: " + err);
+                this._server = null;
+                return;
+            }
+            this._final_url = this.properties.url + "/" + this.properties.room;
+        }
+    };
+
+    LGSillyClient.prototype.send = function(data) {
+        if (!this._server || !this._server.is_connected) {
+            return;
+        }
+        this._server.sendMessage({ type: 1, data: data });
+    };
+
+    LGSillyClient.prototype.onAction = function(action, param) {
+        if (!this._server || !this._server.is_connected) {
+            return;
+        }
+        this._server.sendMessage({ type: 1, action: action, data: param });
+    };
+
+    LGSillyClient.prototype.onGetInputs = function() {
+        return [["in", 0]];
+    };
+
+    LGSillyClient.prototype.onGetOutputs = function() {
+        return [["out", 0]];
+    };
+
+(function(global) {
+    var LiteGraph = global.LiteGraph;
+
+	var view_matrix = new Float32Array(16);
+	var projection_matrix = new Float32Array(16);
+	var viewprojection_matrix = new Float32Array(16);
+	var model_matrix = new Float32Array(16);
+	var global_uniforms = {
+		u_view: view_matrix,
+		u_projection: projection_matrix,
+		u_viewprojection: viewprojection_matrix,
+		u_model: model_matrix
+	};
+
+	LiteGraph.LGraphRender = {
+		onRequestCameraMatrices: null //overwrite with your 3D engine specifics, it will receive (view_matrix, projection_matrix,viewprojection_matrix) and must be filled
+	};
+
+	function generateGeometryId() {
+		return (Math.random() * 100000)|0;
+	}
+
+	function LGraphPoints3D() {
+
+		this.addInput("obj", "");
+		this.addInput("radius", "number");
+
+		this.addOutput("out", "geometry");
+		this.addOutput("points", "[vec3]");
+		this.properties = {
+			radius: 1,
+			num_points: 4096,
+			generate_normals: true,
+			regular: false,
+			mode: LGraphPoints3D.SPHERE,
+			force_update: false
+		};
+
+		this.points = new Float32Array( this.properties.num_points * 3 );
+		this.normals = new Float32Array( this.properties.num_points * 3 );
+		this.must_update = true;
+		this.version = 0;
+
+		var that = this;
+		this.addWidget("button","update",null, function(){ that.must_update = true; });
+
+		this.geometry = {
+			vertices: null,
+			_id: generateGeometryId()
+		}
+
+		this._old_obj = null;
+		this._last_radius = null;
+	}
+
+	global.LGraphPoints3D = LGraphPoints3D;
+
+	LGraphPoints3D.RECTANGLE = 1;
+	LGraphPoints3D.CIRCLE = 2;
+
+	LGraphPoints3D.CUBE = 10;
+	LGraphPoints3D.SPHERE = 11;
+	LGraphPoints3D.HEMISPHERE = 12;
+	LGraphPoints3D.INSIDE_SPHERE = 13;
+
+	LGraphPoints3D.OBJECT = 20;
+	LGraphPoints3D.OBJECT_UNIFORMLY = 21;
+	LGraphPoints3D.OBJECT_INSIDE = 22;
+
+	LGraphPoints3D.MODE_VALUES = { "rectangle":LGraphPoints3D.RECTANGLE, "circle":LGraphPoints3D.CIRCLE, "cube":LGraphPoints3D.CUBE, "sphere":LGraphPoints3D.SPHERE, "hemisphere":LGraphPoints3D.HEMISPHERE, "inside_sphere":LGraphPoints3D.INSIDE_SPHERE, "object":LGraphPoints3D.OBJECT, "object_uniformly":LGraphPoints3D.OBJECT_UNIFORMLY, "object_inside":LGraphPoints3D.OBJECT_INSIDE };
+
+	LGraphPoints3D.widgets_info = {
+		mode: { widget: "combo", values: LGraphPoints3D.MODE_VALUES }
+	};
+
+	LGraphPoints3D.title = "list of points";
+	LGraphPoints3D.desc = "returns an array of points";
+
+	LGraphPoints3D.prototype.onPropertyChanged = function(name,value)
+	{
+		this.must_update = true;
+	}
+
+	LGraphPoints3D.prototype.onExecute = function() {
+
+		var obj = this.getInputData(0);
+		if( obj != this._old_obj || (obj && obj._version != this._old_obj_version) )
+		{
+			this._old_obj = obj;
+			this.must_update = true;
+		}
+
+		var radius = this.getInputData(1);
+		if(radius == null)
+			radius = this.properties.radius;
+		if( this._last_radius != radius )
+		{
+			this._last_radius = radius;
+			this.must_update = true;
+		}
+
+		if(this.must_update || this.properties.force_update )
+		{
+			this.must_update = false;
+			this.updatePoints();
+		}
+
+		this.geometry.vertices = this.points;
+		this.geometry.normals = this.normals;
+		this.geometry._version = this.version;
+
+		this.setOutputData( 0, this.geometry );
+	}
+
+	LGraphPoints3D.prototype.updatePoints = function() {
+		var num_points = this.properties.num_points|0;
+		if(num_points < 1)
+			num_points = 1;
+
+		if(!this.points || this.points.length != num_points * 3)
+			this.points = new Float32Array( num_points * 3 );
+
+		if(this.properties.generate_normals)
+		{
+			if (!this.normals || this.normals.length != this.points.length)
+				this.normals = new Float32Array( this.points.length );
+		}
+		else
+			this.normals = null;
+
+		var radius = this._last_radius || this.properties.radius;
+		var mode = this.properties.mode;
+
+		var obj = this.getInputData(0);
+		this._old_obj_version = obj ? obj._version : null;
+
+		this.points = LGraphPoints3D.generatePoints( radius, num_points, mode, this.points, this.normals, this.properties.regular, obj );
+
+		this.version++;
+	}
+
+	//global
+	LGraphPoints3D.generatePoints = function( radius, num_points, mode, points, normals, regular, obj )
+	{
+		var size = num_points * 3;
+		if(!points || points.length != size)
+			points = new Float32Array( size );
+		var temp = new Float32Array(3);
+		var UP = new Float32Array([0,1,0]);
+
+		if(regular)
+		{
+			if( mode == LGraphPoints3D.RECTANGLE)
+			{
+				var side = Math.floor(Math.sqrt(num_points));
+				for(var i = 0; i < side; ++i)
+				for(var j = 0; j < side; ++j)
+				{
+					var pos = i*3 + j*3*side;
+					points[pos] = ((i/side) - 0.5) * radius * 2;
+					points[pos+1] = 0;
+					points[pos+2] = ((j/side) - 0.5) * radius * 2;
+				}
+				points = new Float32Array( points.subarray(0,side*side*3) );
+				if(normals)
+				{
+					for(var i = 0; i < normals.length; i+=3)
+						normals.set(UP, i);
+				}
+			}
+			else if( mode == LGraphPoints3D.SPHERE)
+			{
+				var side = Math.floor(Math.sqrt(num_points));
+				for(var i = 0; i < side; ++i)
+				for(var j = 0; j < side; ++j)
+				{
+					var pos = i*3 + j*3*side;
+					polarToCartesian( temp, (i/side) * 2 * Math.PI, ((j/side) - 0.5) * 2 * Math.PI, radius );
+					points[pos] = temp[0];
+					points[pos+1] = temp[1];
+					points[pos+2] = temp[2];
+				}
+				points = new Float32Array( points.subarray(0,side*side*3) );
+				if(normals)
+					LGraphPoints3D.generateSphericalNormals( points, normals );
+			}
+			else if( mode == LGraphPoints3D.CIRCLE)
+			{
+				for(var i = 0; i < size; i+=3)
+				{
+					var angle = 2 * Math.PI * (i/size);
+					points[i] = Math.cos( angle ) * radius;
+					points[i+1] = 0;
+					points[i+2] = Math.sin( angle ) * radius;
+				}
+				if(normals)
+				{
+					for(var i = 0; i < normals.length; i+=3)
+						normals.set(UP, i);
+				}
+			}
+		}
+		else //non regular
+		{
+			if( mode == LGraphPoints3D.RECTANGLE)
+			{
+				for(var i = 0; i < size; i+=3)
+				{
+					points[i] = (Math.random() - 0.5) * radius * 2;
+					points[i+1] = 0;
+					points[i+2] = (Math.random() - 0.5) * radius * 2;
+				}
+				if(normals)
+				{
+					for(var i = 0; i < normals.length; i+=3)
+						normals.set(UP, i);
+				}
+			}
+			else if( mode == LGraphPoints3D.CUBE)
+			{
+				for(var i = 0; i < size; i+=3)
+				{
+					points[i] = (Math.random() - 0.5) * radius * 2;
+					points[i+1] = (Math.random() - 0.5) * radius * 2;
+					points[i+2] = (Math.random() - 0.5) * radius * 2;
+				}
+				if(normals)
+				{
+					for(var i = 0; i < normals.length; i+=3)
+						normals.set(UP, i);
+				}
+			}
+			else if( mode == LGraphPoints3D.SPHERE)
+			{
+				LGraphPoints3D.generateSphere( points, size, radius );
+				if(normals)
+					LGraphPoints3D.generateSphericalNormals( points, normals );
+			}
+			else if( mode == LGraphPoints3D.HEMISPHERE)
+			{
+				LGraphPoints3D.generateHemisphere( points, size, radius );
+				if(normals)
+					LGraphPoints3D.generateSphericalNormals( points, normals );
+			}
+			else if( mode == LGraphPoints3D.CIRCLE)
+			{
+				LGraphPoints3D.generateInsideCircle( points, size, radius );
+				if(normals)
+					LGraphPoints3D.generateSphericalNormals( points, normals );
+			}
+			else if( mode == LGraphPoints3D.INSIDE_SPHERE)
+			{
+				LGraphPoints3D.generateInsideSphere( points, size, radius );
+				if(normals)
+					LGraphPoints3D.generateSphericalNormals( points, normals );
+			}
+			else if( mode == LGraphPoints3D.OBJECT)
+			{
+				LGraphPoints3D.generateFromObject( points, normals, size, obj, false );
+			}
+			else if( mode == LGraphPoints3D.OBJECT_UNIFORMLY)
+			{
+				LGraphPoints3D.generateFromObject( points, normals, size, obj, true );
+			}
+			else if( mode == LGraphPoints3D.OBJECT_INSIDE)
+			{
+				LGraphPoints3D.generateFromInsideObject( points, size, obj );
+				//if(normals)
+				//	LGraphPoints3D.generateSphericalNormals( points, normals );
+			}
+			else
+				console.warn("wrong mode in LGraphPoints3D");
+		}
+
+		return points;
+	}
+
+	LGraphPoints3D.generateSphericalNormals = function(points, normals)
+	{
+		var temp = new Float32Array(3);
+		for(var i = 0; i < normals.length; i+=3)
+		{
+			temp[0] = points[i];
+			temp[1] = points[i+1];
+			temp[2] = points[i+2];
+			vec3.normalize(temp,temp);
+			normals.set(temp,i);
+		}
+	}
+
+	LGraphPoints3D.generateSphere = function (points, size, radius)
+	{
+		for(var i = 0; i < size; i+=3)
+		{
+			var r1 = Math.random();
+			var r2 = Math.random();
+			var x = 2 * Math.cos( 2 * Math.PI * r1 ) * Math.sqrt( r2 * (1-r2) );
+			var y = 1 - 2 * r2;
+			var z = 2 * Math.sin( 2 * Math.PI * r1 ) * Math.sqrt( r2 * (1-r2) );
+			points[i] = x * radius;
+			points[i+1] = y * radius;
+			points[i+2] = z * radius;
+		}
+	}
+
+	LGraphPoints3D.generateHemisphere = function (points, size, radius)
+	{
+		for(var i = 0; i < size; i+=3)
+		{
+			var r1 = Math.random();
+			var r2 = Math.random();
+			var x = Math.cos( 2 * Math.PI * r1 ) * Math.sqrt(1 - r2*r2 );
+			var y = r2;
+			var z = Math.sin( 2 * Math.PI * r1 ) * Math.sqrt(1 - r2*r2 );
+			points[i] = x * radius;
+			points[i+1] = y * radius;
+			points[i+2] = z * radius;
+		}
+	}
+
+	LGraphPoints3D.generateInsideCircle = function (points, size, radius)
+	{
+		for(var i = 0; i < size; i+=3)
+		{
+			var r1 = Math.random();
+			var r2 = Math.random();
+			var x = Math.cos( 2 * Math.PI * r1 ) * Math.sqrt(1 - r2*r2 );
+			var y = r2;
+			var z = Math.sin( 2 * Math.PI * r1 ) * Math.sqrt(1 - r2*r2 );
+			points[i] = x * radius;
+			points[i+1] = 0;
+			points[i+2] = z * radius;
+		}
+	}
+
+	LGraphPoints3D.generateInsideSphere = function (points, size, radius)
+	{
+		for(var i = 0; i < size; i+=3)
+		{
+			var u = Math.random();
+			var v = Math.random();
+			var theta = u * 2.0 * Math.PI;
+			var phi = Math.acos(2.0 * v - 1.0);
+			var r = Math.cbrt(Math.random()) * radius;
+			var sinTheta = Math.sin(theta);
+			var cosTheta = Math.cos(theta);
+			var sinPhi = Math.sin(phi);
+			var cosPhi = Math.cos(phi);
+			points[i] = r * sinPhi * cosTheta;
+			points[i+1] = r * sinPhi * sinTheta;
+			points[i+2] = r * cosPhi;
+		}
+	}
+
+	function findRandomTriangle( areas, f )
+	{
+		var l = areas.length;
+		var imin = 0;
+		var imid = 0;
+		var imax = l;
+
+		if(l == 0)
+			return -1;
+		if(l == 1)
+			return 0;
+		//dichotimic search
+		while (imax >= imin)
+		{
+			imid = ((imax + imin)*0.5)|0;
+			var t = areas[ imid ];
+			if( t == f )
+				return imid;
+			if( imin == (imax - 1) )
+				return imin;
+			if (t < f)
+				imin = imid;
+			else
+				imax = imid;
+		}
+		return imid;
+	}
+
+	LGraphPoints3D.generateFromObject = function( points, normals, size, obj, evenly )
+	{
+		if(!obj)
+			return;
+
+		var vertices = null;
+		var mesh_normals = null;
+		var indices = null;
+		var areas = null;
+		if( obj.constructor === GL.Mesh )
+		{
+			vertices = obj.vertexBuffers.vertices.data;
+			mesh_normals = obj.vertexBuffers.normals ? obj.vertexBuffers.normals.data : null;
+			indices = obj.indexBuffers.indices ? obj.indexBuffers.indices.data : null;
+			if(!indices)
+				indices = obj.indexBuffers.triangles ? obj.indexBuffers.triangles.data : null;
+		}
+		if(!vertices)
+			return null;
+		var num_triangles = indices ? indices.length / 3 : vertices.length / (3*3);
+		var total_area = 0; //sum of areas of all triangles
+
+		if(evenly)
+		{
+			areas = new Float32Array(num_triangles); //accum
+			for(var i = 0; i < num_triangles; ++i)
+			{
+				if(indices)
+				{
+					a = indices[i*3]*3;
+					b = indices[i*3+1]*3;
+					c = indices[i*3+2]*3;
+				}
+				else
+				{
+					a = i*9;
+					b = i*9+3;
+					c = i*9+6;
+				}
+				var P1 = vertices.subarray(a,a+3);
+				var P2 = vertices.subarray(b,b+3);
+				var P3 = vertices.subarray(c,c+3);
+				var aL = vec3.distance( P1, P2 );
+				var bL = vec3.distance( P2, P3 );
+				var cL = vec3.distance( P3, P1 );
+				var s = (aL + bL+ cL) / 2;
+				total_area += Math.sqrt(s * (s - aL) * (s - bL) * (s - cL));
+				areas[i] = total_area;
+			}
+			for(var i = 0; i < num_triangles; ++i) //normalize
+				areas[i] /= total_area;
+		}
+
+		for(var i = 0; i < size; i+=3)
+		{
+			var r = Math.random();
+			var index = evenly ? findRandomTriangle( areas, r ) : Math.floor(r * num_triangles );
+			//get random triangle
+			var a = 0;
+			var b = 0;
+			var c = 0;
+			if(indices)
+			{
+				a = indices[index*3]*3;
+				b = indices[index*3+1]*3;
+				c = indices[index*3+2]*3;
+			}
+			else
+			{
+				a = index*9;
+				b = index*9+3;
+				c = index*9+6;
+			}
+			var s = Math.random();
+			var t = Math.random();
+			var sqrt_s = Math.sqrt(s);
+			var af = 1 - sqrt_s;
+			var bf = sqrt_s * ( 1 - t);
+			var cf = t * sqrt_s;
+			points[i] = af * vertices[a] + bf*vertices[b] + cf*vertices[c];
+			points[i+1] = af * vertices[a+1] + bf*vertices[b+1] + cf*vertices[c+1];
+			points[i+2] = af * vertices[a+2] + bf*vertices[b+2] + cf*vertices[c+2];
+			if(normals && mesh_normals)
+			{
+				normals[i] = af * mesh_normals[a] + bf*mesh_normals[b] + cf*mesh_normals[c];
+				normals[i+1] = af * mesh_normals[a+1] + bf*mesh_normals[b+1] + cf*mesh_normals[c+1];
+				normals[i+2] = af * mesh_normals[a+2] + bf*mesh_normals[b+2] + cf*mesh_normals[c+2];
+				var N = normals.subarray(i,i+3);
+				vec3.normalize(N,N);
+			}
+		}
+	}
+
+	LGraphPoints3D.generateFromInsideObject = function( points, size, mesh )
+	{
+		if(!mesh || mesh.constructor !== GL.Mesh)
+			return;
+
+		var aabb = mesh.getBoundingBox();
+		if(!mesh.octree)
+			mesh.octree = new GL.Octree( mesh );
+		var octree = mesh.octree;
+		var origin = vec3.create();
+		var direction = vec3.fromValues(1,0,0);
+		var temp = vec3.create();
+		var i = 0;
+		var tries = 0;
+		while(i < size && tries < points.length * 10) //limit to avoid problems
+		{
+			tries += 1
+			var r = vec3.random(temp); //random point inside the aabb
+			r[0] = (r[0] * 2 - 1) * aabb[3] + aabb[0];
+			r[1] = (r[1] * 2 - 1) * aabb[4] + aabb[1];
+			r[2] = (r[2] * 2 - 1) * aabb[5] + aabb[2];
+			origin.set(r);
+			var hit = octree.testRay( origin, direction, 0, 10000, true, GL.Octree.ALL );
+			if(!hit || hit.length % 2 == 0) //not inside
+				continue;
+			points.set( r, i );
+			i+=3;
+		}
+	}
+
+	LiteGraph.registerNodeType( "geometry/points3D", LGraphPoints3D );
+
+
+
+	function LGraphPointsToInstances() {
+		this.addInput("points", "geometry");
+		this.addOutput("instances", "[mat4]");
+		this.properties = {
+			mode: 1,
+			autoupdate: true
+		};
+
+		this.must_update = true;
+		this.matrices = [];
+		this.first_time = true;
+	}
+
+	LGraphPointsToInstances.NORMAL = 0;
+	LGraphPointsToInstances.VERTICAL = 1;
+	LGraphPointsToInstances.SPHERICAL = 2;
+	LGraphPointsToInstances.RANDOM = 3;
+	LGraphPointsToInstances.RANDOM_VERTICAL = 4;
+
+	LGraphPointsToInstances.modes = {"normal":0,"vertical":1,"spherical":2,"random":3,"random_vertical":4};
+	LGraphPointsToInstances.widgets_info = {
+		mode: { widget: "combo", values: LGraphPointsToInstances.modes }
+	};
+
+	LGraphPointsToInstances.title = "points to inst";
+
+	LGraphPointsToInstances.prototype.onExecute = function()
+	{
+		var geo = this.getInputData(0);
+		if( !geo )
+		{
+			this.setOutputData(0,null);
+			return;
+		}
+
+		if( !this.isOutputConnected(0) )
+			return;
+
+		var has_changed = (geo._version != this._version || geo._id != this._geometry_id);
+
+		if( has_changed && this.properties.autoupdate || this.first_time )
+		{
+			this.first_time = false;
+			this.updateInstances( geo );
+		}
+
+		this.setOutputData( 0, this.matrices );
+	}
+
+	LGraphPointsToInstances.prototype.updateInstances = function( geometry )
+	{
+		var vertices = geometry.vertices;
+		if(!vertices)
+			return null;
+		var normals = geometry.normals;
+
+		var matrices = this.matrices;
+		var num_points = vertices.length / 3;
+		if( matrices.length != num_points)
+			matrices.length = num_points;
+		var identity = mat4.create();
+		var temp = vec3.create();
+		var zero = vec3.create();
+		var UP = vec3.fromValues(0,1,0);
+		var FRONT = vec3.fromValues(0,0,-1);
+		var RIGHT = vec3.fromValues(1,0,0);
+		var R = quat.create();
+
+		var front = vec3.create();
+		var right = vec3.create();
+		var top = vec3.create();
+
+		for(var i = 0; i < vertices.length; i += 3)
+		{
+			var index = i/3;
+			var m = matrices[index];
+			if(!m)
+				m = matrices[index] = mat4.create();
+			m.set( identity );
+			var point = vertices.subarray(i,i+3);
+
+			switch(this.properties.mode)
+			{
+				case LGraphPointsToInstances.NORMAL:
+					mat4.setTranslation( m, point );
+					if(normals)
+					{
+						var normal = normals.subarray(i,i+3);
+						top.set( normal );
+						vec3.normalize( top, top );
+						vec3.cross( right, FRONT, top );
+						vec3.normalize( right, right );
+						vec3.cross( front, right, top );
+						vec3.normalize( front, front );
+						m.set(right,0);
+						m.set(top,4);
+						m.set(front,8);
+						mat4.setTranslation( m, point );
+					}
+					break;
+				case LGraphPointsToInstances.VERTICAL:
+					mat4.setTranslation( m, point );
+					break;
+				case LGraphPointsToInstances.SPHERICAL:
+					front.set( point );
+					vec3.normalize( front, front );
+					vec3.cross( right, UP, front );
+					vec3.normalize( right, right );
+					vec3.cross( top, front, right );
+					vec3.normalize( top, top );
+					m.set(right,0);
+					m.set(top,4);
+					m.set(front,8);
+					mat4.setTranslation( m, point );
+					break;
+				case LGraphPointsToInstances.RANDOM:
+					temp[0] = Math.random()*2 - 1;
+					temp[1] = Math.random()*2 - 1;
+					temp[2] = Math.random()*2 - 1;
+					vec3.normalize( temp, temp );
+					quat.setAxisAngle( R, temp, Math.random() * 2 * Math.PI );
+					mat4.fromQuat(m, R);
+					mat4.setTranslation( m, point );
+					break;
+				case LGraphPointsToInstances.RANDOM_VERTICAL:
+					quat.setAxisAngle( R, UP, Math.random() * 2 * Math.PI );
+					mat4.fromQuat(m, R);
+					mat4.setTranslation( m, point );
+					break;
+			}
+		}
+
+		this._version = geometry._version;
+		this._geometry_id = geometry._id;
+	}
+
+	LiteGraph.registerNodeType( "geometry/points_to_instances", LGraphPointsToInstances );
+
+
+	function LGraphGeometryTransform() {
+		this.addInput("in", "geometry,[mat4]");
+		this.addInput("mat4", "mat4");
+		this.addOutput("out", "geometry");
+		this.properties = {};
+
+		this.geometry = {
+			type: "triangles",
+			vertices: null,
+			_id: generateGeometryId(),
+			_version: 0
+		};
+
+		this._last_geometry_id = -1;
+		this._last_version = -1;
+		this._last_key = "";
+
+		this.must_update = true;
+	}
+
+	LGraphGeometryTransform.title = "Transform";
+
+	LGraphGeometryTransform.prototype.onExecute = function() {
+
+		var input = this.getInputData(0);
+		var model = this.getInputData(1);
+
+		if(!input)
+			return;
+
+		//array of matrices
+		if(input.constructor === Array)
+		{
+			if(input.length == 0)
+				return;
+			this.outputs[0].type = "[mat4]";
+			if( !this.isOutputConnected(0) )
+				return;
+
+			if(!model)
+			{
+				this.setOutputData(0,input);
+				return;
+			}
+
+			if(!this._output)
+				this._output = new Array();
+			if(this._output.length != input.length)
+				this._output.length = input.length;
+			for(var i = 0; i < input.length; ++i)
+			{
+				var m = this._output[i];
+				if(!m)
+					m = this._output[i] = mat4.create();
+				mat4.multiply(m,input[i],model);
+			}
+			this.setOutputData(0,this._output);
+			return;
+		}
+
+		//geometry
+		if(!input.vertices || !input.vertices.length)
+			return;
+		var geo = input;
+		this.outputs[0].type = "geometry";
+		if( !this.isOutputConnected(0) )
+			return;
+		if(!model)
+		{
+			this.setOutputData(0,geo);
+			return;
+		}
+
+		var key = typedArrayToArray(model).join(",");
+
+		if( this.must_update || geo._id != this._last_geometry_id || geo._version != this._last_version || key != this._last_key )
+		{
+			this.updateGeometry(geo, model);
+			this._last_key = key;
+			this._last_version = geo._version;
+			this._last_geometry_id = geo._id;
+			this.must_update = false;
+		}
+
+		this.setOutputData(0,this.geometry);
+	}
+
+	LGraphGeometryTransform.prototype.updateGeometry = function(geometry, model) {
+		var old_vertices = geometry.vertices;
+		var vertices = this.geometry.vertices;
+		if( !vertices || vertices.length != old_vertices.length )
+			vertices = this.geometry.vertices = new Float32Array( old_vertices.length );
+		var temp = vec3.create();
+
+		for(var i = 0, l = vertices.length; i < l; i+=3)
+		{
+			temp[0] = old_vertices[i]; temp[1] = old_vertices[i+1]; temp[2] = old_vertices[i+2];
+			mat4.multiplyVec3( temp, model, temp );
+			vertices[i] = temp[0]; vertices[i+1] = temp[1]; vertices[i+2] = temp[2];
+		}
+
+		if(geometry.normals)
+		{
+			if( !this.geometry.normals || this.geometry.normals.length != geometry.normals.length )
+				this.geometry.normals = new Float32Array( geometry.normals.length );
+			var normals = this.geometry.normals;
+			var normal_model = mat4.invert(mat4.create(), model);
+			if(normal_model)
+				mat4.transpose(normal_model, normal_model);
+			var old_normals = geometry.normals;
+			for(var i = 0, l = normals.length; i < l; i+=3)
+			{
+				temp[0] = old_normals[i]; temp[1] = old_normals[i+1]; temp[2] = old_normals[i+2];
+				mat4.multiplyVec3( temp, normal_model, temp );
+				normals[i] = temp[0]; normals[i+1] = temp[1]; normals[i+2] = temp[2];
+			}
+		}
+
+		this.geometry.type = geometry.type;
+		this.geometry._version++;
+	}
+
+	LiteGraph.registerNodeType( "geometry/transform", LGraphGeometryTransform );
+
+
+	function LGraphGeometryPolygon() {
+		this.addInput("sides", "number");
+		this.addInput("radius", "number");
+		this.addOutput("out", "geometry");
+		this.properties = { sides: 6, radius: 1, uvs: false }
+
+		this.geometry = {
+			type: "line_loop",
+			vertices: null,
+			_id: generateGeometryId()
+		};
+		this.geometry_id = -1;
+		this.version = -1;
+		this.must_update = true;
+
+		this.last_info = { sides: -1, radius: -1 };
+	}
+
+	LGraphGeometryPolygon.title = "Polygon";
+
+	LGraphGeometryPolygon.prototype.onExecute = function() {
+
+		if( !this.isOutputConnected(0) )
+			return;
+
+		var sides = this.getInputOrProperty("sides");
+		var radius = this.getInputOrProperty("radius");
+		sides = Math.max(3,sides)|0;
+
+		//update
+		if( this.last_info.sides != sides || this.last_info.radius != radius )
+			this.updateGeometry(sides, radius);
+
+		this.setOutputData(0,this.geometry);
+	}
+
+	LGraphGeometryPolygon.prototype.updateGeometry = function(sides, radius) {
+		var num = 3*sides;
+		var vertices = this.geometry.vertices;
+		if( !vertices || vertices.length != num )
+			vertices = this.geometry.vertices = new Float32Array( 3*sides );
+		var delta = (Math.PI * 2) / sides;
+		var gen_uvs = this.properties.uvs;
+		if(gen_uvs)
+		{
+			uvs = this.geometry.coords = new Float32Array( 3*sides );
+		}
+
+
+		for(var i = 0; i < sides; ++i)
+		{
+			var angle = delta * -i;
+			var x = Math.cos( angle ) * radius;
+			var y = 0;
+			var z = Math.sin( angle ) * radius;
+			vertices[i*3] = x;
+			vertices[i*3+1] = y;
+			vertices[i*3+2] = z;
+
+			if(gen_uvs)
+			{
+
+
+			}
+		}
+		this.geometry._id = ++this.geometry_id;
+		this.geometry._version = ++this.version;
+		this.last_info.sides = sides;
+		this.last_info.radius = radius;
+	}
+
+	LiteGraph.registerNodeType( "geometry/polygon", LGraphGeometryPolygon );
+
+
+	function LGraphGeometryExtrude() {
+
+		this.addInput("", "geometry");
+		this.addOutput("", "geometry");
+		this.properties = { top_cap: true, bottom_cap: true, offset: [0,100,0] };
+		this.version = -1;
+
+		this._last_geo_version = -1;
+		this._must_update = true;
+	}
+
+	LGraphGeometryExtrude.title = "extrude";
+
+	LGraphGeometryExtrude.prototype.onPropertyChanged = function(name, value)
+	{
+		this._must_update = true;
+	}
+
+	LGraphGeometryExtrude.prototype.onExecute = function()
+	{
+		var geo = this.getInputData(0);
+		if( !geo || !this.isOutputConnected(0) )
+			return;
+
+		if(geo.version != this._last_geo_version || this._must_update)
+		{
+			this._geo = this.extrudeGeometry( geo, this._geo );
+			if(this._geo)
+				this._geo.version = this.version++;
+			this._must_update = false;
+		}
+
+		this.setOutputData(0, this._geo);
+	}
+
+	LGraphGeometryExtrude.prototype.extrudeGeometry = function( geo )
+	{
+		//for every pair of vertices
+		var vertices = geo.vertices;
+		var num_points = vertices.length / 3;
+
+		var tempA = vec3.create();
+		var tempB = vec3.create();
+		var tempC = vec3.create();
+		var tempD = vec3.create();
+		var offset = new Float32Array( this.properties.offset );
+
+		if(geo.type == "line_loop")
+		{
+			var new_vertices = new Float32Array( num_points * 6 * 3 ); //every points become 6 ( caps not included )
+			var npos = 0;
+			for(var i = 0, l = vertices.length; i < l; i += 3)
+			{
+				tempA[0] = vertices[i]; tempA[1] = vertices[i+1]; tempA[2] = vertices[i+2];
+
+				if( i+3 < l ) //loop
+				{
+					tempB[0] = vertices[i+3]; tempB[1] = vertices[i+4]; tempB[2] = vertices[i+5];
+				}
+				else
+				{
+					tempB[0] = vertices[0]; tempB[1] = vertices[1]; tempB[2] = vertices[2];
+				}
+
+				vec3.add( tempC, tempA, offset );
+				vec3.add( tempD, tempB, offset );
+
+				new_vertices.set( tempA, npos ); npos += 3;
+				new_vertices.set( tempB, npos ); npos += 3;
+				new_vertices.set( tempC, npos ); npos += 3;
+
+				new_vertices.set( tempB, npos ); npos += 3;
+				new_vertices.set( tempD, npos ); npos += 3;
+				new_vertices.set( tempC, npos ); npos += 3;
+			}
+		}
+
+		var out_geo = {
+			_id: generateGeometryId(),
+			type: "triangles",
+			vertices: new_vertices
+		};
+
+		return out_geo;
+	}
+
+	LiteGraph.registerNodeType( "geometry/extrude", LGraphGeometryExtrude );
+
+
+	function LGraphGeometryEval() {
+		this.addInput("in", "geometry");
+		this.addOutput("out", "geometry");
+
+		this.properties = {
+			code: "V[1] += 0.01 * Math.sin(I + T*0.001);",
+			execute_every_frame: false
+		};
+
+		this.geometry = null;
+		this.geometry_id = -1;
+		this.version = -1;
+		this.must_update = true;
+
+		this.vertices = null;
+		this.func = null;
+	}
+
+	LGraphGeometryEval.title = "geoeval";
+	LGraphGeometryEval.desc = "eval code";
+
+	LGraphGeometryEval.widgets_info = {
+		code: { widget: "code" }
+	};
+
+	LGraphGeometryEval.prototype.onConfigure = function(o)
+	{
+		this.compileCode();
+	}
+
+	LGraphGeometryEval.prototype.compileCode = function()
+	{
+		if(!this.properties.code)
+			return;
+
+		try
+		{
+			this.func = new Function("V","I","T", this.properties.code);
+			this.boxcolor = "#AFA";
+			this.must_update = true;
+		}
+		catch (err)
+		{
+			this.boxcolor = "red";
+		}
+	}
+
+	LGraphGeometryEval.prototype.onPropertyChanged = function(name, value)
+	{
+		if(name == "code")
+		{
+			this.properties.code = value;
+			this.compileCode();
+		}
+	}
+
+	LGraphGeometryEval.prototype.onExecute = function() {
+		var geometry = this.getInputData(0);
+		if(!geometry)
+			return;
+
+		if(!this.func)
+		{
+			this.setOutputData(0,geometry);
+			return;
+		}
+
+		if( this.geometry_id != geometry._id || this.version != geometry._version || this.must_update || this.properties.execute_every_frame )
+		{
+			this.must_update = false;
+			this.geometry_id = geometry._id;
+			if(this.properties.execute_every_frame)
+				this.version++;
+			else
+				this.version = geometry._version;
+			var func = this.func;
+			var T = getTime();
+
+			//clone
+			if(!this.geometry)
+				this.geometry = {};
+			for(var i in geometry)
+			{
+				if(geometry[i] == null)
+					continue;
+				if( geometry[i].constructor == Float32Array )
+					this.geometry[i] = new Float32Array( geometry[i] );
+				else
+					this.geometry[i] = geometry[i];
+			}
+			this.geometry._id = geometry._id;
+			if(this.properties.execute_every_frame)
+				this.geometry._version = this.version;
+			else
+				this.geometry._version = geometry._version + 1;
+
+			var V = vec3.create();
+			var vertices = this.vertices;
+			if(!vertices || this.vertices.length != geometry.vertices.length)
+				vertices = this.vertices = new Float32Array( geometry.vertices );
+			else
+				vertices.set( geometry.vertices );
+			for(var i = 0; i < vertices.length; i+=3)
+			{
+				V[0] = vertices[i];
+				V[1] = vertices[i+1];
+				V[2] = vertices[i+2];
+				func(V,i/3,T);
+				vertices[i] = V[0];
+				vertices[i+1] = V[1];
+				vertices[i+2] = V[2];
+			}
+			this.geometry.vertices = vertices;
+		}
+
+		this.setOutputData(0,this.geometry);
+	}
+
+	LiteGraph.registerNodeType( "geometry/eval", LGraphGeometryEval );
+
+/*
+function LGraphGeometryDisplace() {
+		this.addInput("in", "geometry");
+		this.addInput("img", "image");
+		this.addOutput("out", "geometry");
+
+		this.properties = {
+			grid_size: 1
+		};
+
+		this.geometry = null;
+		this.geometry_id = -1;
+		this.version = -1;
+		this.must_update = true;
+
+		this.vertices = null;
+	}
+
+	LGraphGeometryDisplace.title = "displace";
+	LGraphGeometryDisplace.desc = "displace points";
+
+	LGraphGeometryDisplace.prototype.onExecute = function() {
+		var geometry = this.getInputData(0);
+		var image = this.getInputData(1);
+		if(!geometry)
+			return;
+
+		if(!image)
+		{
+			this.setOutputData(0,geometry);
+			return;
+		}
+
+		if( this.geometry_id != geometry._id || this.version != geometry._version || this.must_update )
+		{
+			this.must_update = false;
+			this.geometry_id = geometry._id;
+			this.version = geometry._version;
+
+			//copy
+			this.geometry = {};
+			for(var i in geometry)
+				this.geometry[i] = geometry[i];
+			this.geometry._id = geometry._id;
+			this.geometry._version = geometry._version + 1;
+
+			var grid_size = this.properties.grid_size;
+			if(grid_size != 0)
+			{
+				var vertices = this.vertices;
+				if(!vertices || this.vertices.length != this.geometry.vertices.length)
+					vertices = this.vertices = new Float32Array( this.geometry.vertices );
+				for(var i = 0; i < vertices.length; i+=3)
+				{
+					vertices[i] = Math.round(vertices[i]/grid_size) * grid_size;
+					vertices[i+1] = Math.round(vertices[i+1]/grid_size) * grid_size;
+					vertices[i+2] = Math.round(vertices[i+2]/grid_size) * grid_size;
+				}
+				this.geometry.vertices = vertices;
+			}
+		}
+
+		this.setOutputData(0,this.geometry);
+	}
+
+	LiteGraph.registerNodeType( "geometry/displace", LGraphGeometryDisplace );
+*/
+
+	function LGraphConnectPoints() {
+		this.addInput("in", "geometry");
+		this.addOutput("out", "geometry");
+
+		this.properties = {
+			min_dist: 0.4,
+			max_dist: 0.5,
+			max_connections: 0,
+			probability: 1
+		};
+
+		this.geometry_id = -1;
+		this.version = -1;
+		this.my_version = 1;
+		this.must_update = true;
+	}
+
+	LGraphConnectPoints.title = "connect points";
+	LGraphConnectPoints.desc = "adds indices between near points";
+
+	LGraphConnectPoints.prototype.onPropertyChanged = function(name,value)
+	{
+		this.must_update = true;
+	}
+
+	LGraphConnectPoints.prototype.onExecute = function() {
+		var geometry = this.getInputData(0);
+		if(!geometry)
+			return;
+
+		if( this.geometry_id != geometry._id || this.version != geometry._version || this.must_update )
+		{
+			this.must_update = false;
+			this.geometry_id = geometry._id;
+			this.version = geometry._version;
+
+			//copy
+			this.geometry = {};
+			for(var i in geometry)
+				this.geometry[i] = geometry[i];
+			this.geometry._id = generateGeometryId();
+			this.geometry._version = this.my_version++;
+
+			var vertices = geometry.vertices;
+			var l = vertices.length;
+			var min_dist = this.properties.min_dist;
+			var max_dist = this.properties.max_dist;
+			var probability = this.properties.probability;
+			var max_connections = this.properties.max_connections;
+			var indices = [];
+
+			for(var i = 0; i < l; i+=3)
+			{
+				var x = vertices[i];
+				var y = vertices[i+1];
+				var z = vertices[i+2];
+				var connections = 0;
+				for(var j = i+3; j < l; j+=3)
+				{
+					var x2 = vertices[j];
+					var y2 = vertices[j+1];
+					var z2 = vertices[j+2];
+					var dist = Math.sqrt( (x-x2)*(x-x2) + (y-y2)*(y-y2) + (z-z2)*(z-z2));
+					if(dist > max_dist || dist < min_dist || (probability < 1 && probability < Math.random()) )
+						continue;
+					indices.push(i/3,j/3);
+					connections += 1;
+					if(max_connections && connections > max_connections)
+						break;
+				}
+			}
+			this.geometry.indices = this.indices = new Uint32Array(indices);
+		}
+
+		if(this.indices && this.indices.length)
+		{
+			this.geometry.indices = this.indices;
+			this.setOutputData( 0, this.geometry );
+		}
+		else
+			this.setOutputData( 0, null );
+	}
+
+	LiteGraph.registerNodeType( "geometry/connectPoints", LGraphConnectPoints );
+
+    //Works with Litegl.js to create WebGL nodes
+    if (typeof GL == "undefined") //LiteGL RELATED **********************************************
+		return;
+
+	function LGraphToGeometry() {
+		this.addInput("mesh", "mesh");
+		this.addOutput("out", "geometry");
+
+		this.geometry = {};
+		this.last_mesh = null;
+	}
+
+	LGraphToGeometry.title = "to geometry";
+	LGraphToGeometry.desc = "converts a mesh to geometry";
+
+	LGraphToGeometry.prototype.onExecute = function() {
+		var mesh = this.getInputData(0);
+		if(!mesh)
+			return;
+
+		if(mesh != this.last_mesh)
+		{
+			this.last_mesh = mesh;
+			for(i in mesh.vertexBuffers)
+			{
+				var buffer = mesh.vertexBuffers[i];
+				this.geometry[i] = buffer.data
+			}
+			if(mesh.indexBuffers["triangles"])
+				this.geometry.indices = mesh.indexBuffers["triangles"].data;
+
+			this.geometry._id = generateGeometryId();
+			this.geometry._version = 0;
+		}
+
+		this.setOutputData(0,this.geometry);
+		if(this.geometry)
+			this.setOutputData(1,this.geometry.vertices);
+	}
+
+	LiteGraph.registerNodeType( "geometry/toGeometry", LGraphToGeometry );
+
+	function LGraphGeometryToMesh() {
+		this.addInput("in", "geometry");
+		this.addOutput("mesh", "mesh");
+		this.properties = {};
+		this.version = -1;
+		this.mesh = null;
+	}
+
+	LGraphGeometryToMesh.title = "Geo to Mesh";
+
+	LGraphGeometryToMesh.prototype.updateMesh = function(geometry)
+	{
+		if(!this.mesh)
+			this.mesh = new GL.Mesh();
+
+		for(var i in geometry)
+		{
+			if(i[0] == "_")
+				continue;
+
+			var buffer_data = geometry[i];
+
+			var info = GL.Mesh.common_buffers[i];
+			if(!info && i != "indices") //unknown buffer
+				continue;
+			var spacing = info ? info.spacing : 3;
+			var mesh_buffer = this.mesh.vertexBuffers[i];
+
+			if(!mesh_buffer || mesh_buffer.data.length != buffer_data.length)
+			{
+				mesh_buffer = new GL.Buffer( i == "indices" ? GL.ELEMENT_ARRAY_BUFFER : GL.ARRAY_BUFFER, buffer_data, spacing, GL.DYNAMIC_DRAW );
+			}
+			else
+			{
+				mesh_buffer.data.set( buffer_data );
+				mesh_buffer.upload(GL.DYNAMIC_DRAW);
+			}
+
+			this.mesh.addBuffer( i, mesh_buffer );
+		}
+
+		if(this.mesh.vertexBuffers.normals &&this.mesh.vertexBuffers.normals.data.length != this.mesh.vertexBuffers.vertices.data.length )
+		{
+			var n = new Float32Array([0,1,0]);
+			var normals = new Float32Array( this.mesh.vertexBuffers.vertices.data.length );
+			for(var i = 0; i < normals.length; i+= 3)
+				normals.set( n, i );
+			mesh_buffer = new GL.Buffer( GL.ARRAY_BUFFER, normals, 3 );
+			this.mesh.addBuffer( "normals", mesh_buffer );
+		}
+
+		this.mesh.updateBoundingBox();
+		this.geometry_id = this.mesh.id = geometry._id;
+		this.version = this.mesh.version = geometry._version;
+		return this.mesh;
+	}
+
+	LGraphGeometryToMesh.prototype.onExecute = function() {
+
+		var geometry = this.getInputData(0);
+		if(!geometry)
+			return;
+		if( this.version != geometry._version || this.geometry_id != geometry._id )
+			this.updateMesh( geometry );
+		this.setOutputData(0, this.mesh);
+	}
+
+	LiteGraph.registerNodeType( "geometry/toMesh", LGraphGeometryToMesh );
+
+	function LGraphRenderMesh() {
+		this.addInput("mesh", "mesh");
+		this.addInput("mat4", "mat4");
+		this.addInput("tex", "texture");
+
+		this.properties = {
+			enabled: true,
+			primitive: GL.TRIANGLES,
+			additive: false,
+			color: [1,1,1],
+			opacity: 1
+		};
+
+		this.color = vec4.create([1,1,1,1]);
+		this.model_matrix = mat4.create();
+		this.uniforms = {
+			u_color: this.color,
+			u_model: this.model_matrix
+		};
+	}
+
+	LGraphRenderMesh.title = "Render Mesh";
+	LGraphRenderMesh.desc = "renders a mesh flat";
+
+	LGraphRenderMesh.PRIMITIVE_VALUES = { "points":GL.POINTS, "lines":GL.LINES, "line_loop":GL.LINE_LOOP,"line_strip":GL.LINE_STRIP, "triangles":GL.TRIANGLES, "triangle_fan":GL.TRIANGLE_FAN, "triangle_strip":GL.TRIANGLE_STRIP };
+
+	LGraphRenderMesh.widgets_info = {
+		primitive: { widget: "combo", values: LGraphRenderMesh.PRIMITIVE_VALUES },
+		color: { widget: "color" }
+	};
+
+	LGraphRenderMesh.prototype.onExecute = function() {
+
+		if(!this.properties.enabled)
+			return;
+
+		var mesh = this.getInputData(0);
+		if(!mesh)
+			return;
+
+		if(!LiteGraph.LGraphRender.onRequestCameraMatrices)
+		{
+			console.warn("cannot render geometry, LiteGraph.onRequestCameraMatrices is null, remember to fill this with a callback(view_matrix, projection_matrix,viewprojection_matrix) to use 3D rendering from the graph");
+			return;
+		}
+
+		LiteGraph.LGraphRender.onRequestCameraMatrices( view_matrix, projection_matrix,viewprojection_matrix );
+		var shader = null;
+		var texture = this.getInputData(2);
+		if(texture)
+		{
+			shader = gl.shaders["textured"];
+			if(!shader)
+				shader = gl.shaders["textured"] = new GL.Shader( LGraphRenderPoints.vertex_shader_code, LGraphRenderPoints.fragment_shader_code, { USE_TEXTURE:"" });
+		}
+		else
+		{
+			shader = gl.shaders["flat"];
+			if(!shader)
+				shader = gl.shaders["flat"] = new GL.Shader( LGraphRenderPoints.vertex_shader_code, LGraphRenderPoints.fragment_shader_code );
+		}
+
+		this.color.set( this.properties.color );
+		this.color[3] = this.properties.opacity;
+
+		var model_matrix = this.model_matrix;
+		var m = this.getInputData(1);
+		if(m)
+			model_matrix.set(m);
+		else
+			mat4.identity( model_matrix );
+
+		this.uniforms.u_point_size = 1;
+		var primitive = this.properties.primitive;
+
+		shader.uniforms( global_uniforms );
+		shader.uniforms( this.uniforms );
+
+		if(this.properties.opacity >= 1)
+			gl.disable( gl.BLEND );
+		else
+			gl.enable( gl.BLEND );
+		gl.enable( gl.DEPTH_TEST );
+		if( this.properties.additive )
+		{
+			gl.blendFunc( gl.SRC_ALPHA, gl.ONE );
+			gl.depthMask( false );
+		}
+		else
+			gl.blendFunc( gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA );
+
+		var indices = "indices";
+		if( mesh.indexBuffers.triangles )
+			indices = "triangles";
+		shader.draw( mesh, primitive, indices );
+		gl.disable( gl.BLEND );
+		gl.depthMask( true );
+	}
+
+	LiteGraph.registerNodeType( "geometry/render_mesh", LGraphRenderMesh );
+
+	//**************************
+
+
+	function LGraphGeometryPrimitive() {
+		this.addInput("size", "number");
+		this.addOutput("out", "mesh");
+		this.properties = { type: 1, size: 1, subdivisions: 32 };
+
+		this.version = (Math.random() * 100000)|0;
+		this.last_info = { type: -1, size: -1, subdivisions: -1 };
+	}
+
+	LGraphGeometryPrimitive.title = "Primitive";
+
+	LGraphGeometryPrimitive.VALID = { "CUBE":1, "PLANE":2, "CYLINDER":3, "SPHERE":4, "CIRCLE":5, "HEMISPHERE":6, "ICOSAHEDRON":7, "CONE":8, "QUAD":9 };
+	LGraphGeometryPrimitive.widgets_info = {
+		type: { widget: "combo", values: LGraphGeometryPrimitive.VALID }
+	};
+
+	LGraphGeometryPrimitive.prototype.onExecute = function() {
+
+		if( !this.isOutputConnected(0) )
+			return;
+
+		var size = this.getInputOrProperty("size");
+
+		//update
+		if( this.last_info.type != this.properties.type || this.last_info.size != size || this.last_info.subdivisions != this.properties.subdivisions )
+			this.updateMesh( this.properties.type, size, this.properties.subdivisions );
+
+		this.setOutputData(0,this._mesh);
+	}
+
+	LGraphGeometryPrimitive.prototype.updateMesh = function(type, size, subdivisions)
+	{
+		subdivisions = Math.max(0,subdivisions)|0;
+
+		switch (type)
+		{
+			case 1: //CUBE:
+				this._mesh = GL.Mesh.cube({size: size, normals:true,coords:true});
+				break;
+			case 2: //PLANE:
+				this._mesh = GL.Mesh.plane({size: size, xz: true, detail: subdivisions, normals:true,coords:true});
+				break;
+			case 3: //CYLINDER:
+				this._mesh = GL.Mesh.cylinder({size: size, subdivisions: subdivisions, normals:true,coords:true});
+				break;
+			case 4: //SPHERE:
+				this._mesh = GL.Mesh.sphere({size: size, "long": subdivisions, lat: subdivisions, normals:true,coords:true});
+				break;
+			case 5: //CIRCLE:
+				this._mesh = GL.Mesh.circle({size: size, slices: subdivisions, normals:true, coords:true});
+				break;
+			case 6: //HEMISPHERE:
+				this._mesh = GL.Mesh.sphere({size: size, "long": subdivisions, lat: subdivisions, normals:true, coords:true, hemi: true});
+				break;
+			case 7: //ICOSAHEDRON:
+				this._mesh = GL.Mesh.icosahedron({size: size, subdivisions:subdivisions });
+				break;
+			case 8: //CONE:
+				this._mesh = GL.Mesh.cone({radius: size, height: size, subdivisions:subdivisions });
+				break;
+			case 9: //QUAD:
+				this._mesh = GL.Mesh.plane({size: size, xz: false, detail: subdivisions, normals:true, coords:true });
+				break;
+		}
+
+		this.last_info.type = type;
+		this.last_info.size = size;
+		this.last_info.subdivisions = subdivisions;
+		this._mesh.version = this.version++;
+	}
+
+	LiteGraph.registerNodeType( "geometry/mesh_primitive", LGraphGeometryPrimitive );
+
+
+	function LGraphRenderPoints() {
+		this.addInput("in", "geometry");
+		this.addInput("mat4", "mat4");
+		this.addInput("tex", "texture");
+		this.properties = {
+			enabled: true,
+			point_size: 0.1,
+			fixed_size: false,
+			additive: true,
+			color: [1,1,1],
+			opacity: 1
+		};
+
+		this.color = vec4.create([1,1,1,1]);
+
+		this.uniforms = {
+			u_point_size: 1,
+			u_perspective: 1,
+			u_point_perspective: 1,
+			u_color: this.color
+		};
+
+		this.geometry_id = -1;
+		this.version = -1;
+		this.mesh = null;
+	}
+
+	LGraphRenderPoints.title = "renderPoints";
+	LGraphRenderPoints.desc = "render points with a texture";
+
+	LGraphRenderPoints.widgets_info = {
+		color: { widget: "color" }
+	};
+
+	LGraphRenderPoints.prototype.updateMesh = function(geometry)
+	{
+		var buffer = this.buffer;
+		if(!this.buffer || !this.buffer.data || this.buffer.data.length != geometry.vertices.length)
+			this.buffer = new GL.Buffer( GL.ARRAY_BUFFER, geometry.vertices,3,GL.DYNAMIC_DRAW);
+		else
+		{
+			this.buffer.data.set( geometry.vertices );
+			this.buffer.upload(GL.DYNAMIC_DRAW);
+		}
+
+		if(!this.mesh)
+			this.mesh = new GL.Mesh();
+
+		this.mesh.addBuffer("vertices",this.buffer);
+		this.geometry_id = this.mesh.id = geometry._id;
+		this.version = this.mesh.version = geometry._version;
+	}
+
+	LGraphRenderPoints.prototype.onExecute = function() {
+
+		if(!this.properties.enabled)
+			return;
+
+		var geometry = this.getInputData(0);
+		if(!geometry)
+			return;
+		if(this.version != geometry._version || this.geometry_id != geometry._id )
+			this.updateMesh( geometry );
+
+		if(!LiteGraph.LGraphRender.onRequestCameraMatrices)
+		{
+			console.warn("cannot render geometry, LiteGraph.onRequestCameraMatrices is null, remember to fill this with a callback(view_matrix, projection_matrix,viewprojection_matrix) to use 3D rendering from the graph");
+			return;
+		}
+
+		LiteGraph.LGraphRender.onRequestCameraMatrices( view_matrix, projection_matrix,viewprojection_matrix );
+		var shader = null;
+
+		var texture = this.getInputData(2);
+
+		if(texture)
+		{
+			shader = gl.shaders["textured_points"];
+			if(!shader)
+				shader = gl.shaders["textured_points"] = new GL.Shader( LGraphRenderPoints.vertex_shader_code, LGraphRenderPoints.fragment_shader_code, { USE_TEXTURED_POINTS:"" });
+		}
+		else
+		{
+			shader = gl.shaders["points"];
+			if(!shader)
+				shader = gl.shaders["points"] = new GL.Shader( LGraphRenderPoints.vertex_shader_code, LGraphRenderPoints.fragment_shader_code, { USE_POINTS: "" });
+		}
+
+		this.color.set( this.properties.color );
+		this.color[3] = this.properties.opacity;
+
+		var m = this.getInputData(1);
+		if(m)
+			model_matrix.set(m);
+		else
+			mat4.identity( model_matrix );
+
+		this.uniforms.u_point_size = this.properties.point_size;
+		this.uniforms.u_point_perspective = this.properties.fixed_size ? 0 : 1;
+		this.uniforms.u_perspective = gl.viewport_data[3] * projection_matrix[5];
+
+		shader.uniforms( global_uniforms );
+		shader.uniforms( this.uniforms );
+
+		if(this.properties.opacity >= 1)
+			gl.disable( gl.BLEND );
+		else
+			gl.enable( gl.BLEND );
+
+		gl.enable( gl.DEPTH_TEST );
+		if( this.properties.additive )
+		{
+			gl.blendFunc( gl.SRC_ALPHA, gl.ONE );
+			gl.depthMask( false );
+		}
+		else
+			gl.blendFunc( gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA );
+
+		shader.draw( this.mesh, GL.POINTS );
+
+		gl.disable( gl.BLEND );
+		gl.depthMask( true );
+	}
+
+	LiteGraph.registerNodeType( "geometry/render_points", LGraphRenderPoints );
+
+	LGraphRenderPoints.vertex_shader_code = '\
+		precision mediump float;\n\
+		attribute vec3 a_vertex;\n\
+		varying vec3 v_vertex;\n\
+		attribute vec3 a_normal;\n\
+		varying vec3 v_normal;\n\
+		#ifdef USE_COLOR\n\
+			attribute vec4 a_color;\n\
+			varying vec4 v_color;\n\
+		#endif\n\
+		attribute vec2 a_coord;\n\
+		varying vec2 v_coord;\n\
+		#ifdef USE_SIZE\n\
+			attribute float a_extra;\n\
+		#endif\n\
+		#ifdef USE_INSTANCING\n\
+			attribute mat4 u_model;\n\
+		#else\n\
+			uniform mat4 u_model;\n\
+		#endif\n\
+		uniform mat4 u_viewprojection;\n\
+		uniform float u_point_size;\n\
+		uniform float u_perspective;\n\
+		uniform float u_point_perspective;\n\
+		float computePointSize(float radius, float w)\n\
+		{\n\
+			if(radius < 0.0)\n\
+				return -radius;\n\
+			return u_perspective * radius / w;\n\
+		}\n\
+		void main() {\n\
+			v_coord = a_coord;\n\
+			#ifdef USE_COLOR\n\
+				v_color = a_color;\n\
+			#endif\n\
+			v_vertex = ( u_model * vec4( a_vertex, 1.0 )).xyz;\n\
+			v_normal = ( u_model * vec4( a_normal, 0.0 )).xyz;\n\
+			gl_Position = u_viewprojection * vec4(v_vertex,1.0);\n\
+			gl_PointSize = u_point_size;\n\
+			#ifdef USE_SIZE\n\
+				gl_PointSize = a_extra;\n\
+			#endif\n\
+			if(u_point_perspective != 0.0)\n\
+				gl_PointSize = computePointSize( gl_PointSize, gl_Position.w );\n\
+		}\
+	';
+
+	LGraphRenderPoints.fragment_shader_code = '\
+		precision mediump float;\n\
+		uniform vec4 u_color;\n\
+		#ifdef USE_COLOR\n\
+			varying vec4 v_color;\n\
+		#endif\n\
+		varying vec2 v_coord;\n\
+		uniform sampler2D u_texture;\n\
+		void main() {\n\
+			vec4 color = u_color;\n\
+			#ifdef USE_TEXTURED_POINTS\n\
+				color *= texture2D(u_texture, gl_PointCoord.xy);\n\
+			#else\n\
+				#ifdef USE_TEXTURE\n\
+				  color *= texture2D(u_texture, v_coord);\n\
+				  if(color.a < 0.1)\n\
+					discard;\n\
+				#endif\n\
+				#ifdef USE_POINTS\n\
+					float dist = length( gl_PointCoord.xy - vec2(0.5) );\n\
+					if( dist > 0.45 )\n\
+						discard;\n\
+				#endif\n\
+			#endif\n\
+			#ifdef USE_COLOR\n\
+				color *= v_color;\n\
+			#endif\n\
+			gl_FragColor = color;\n\
+		}\
+	';
+
+	//based on https://inconvergent.net/2019/depth-of-field/
+	/*
+	function LGraphRenderGeometryDOF() {
+		this.addInput("in", "geometry");
+		this.addInput("mat4", "mat4");
+		this.addInput("tex", "texture");
+		this.properties = {
+			enabled: true,
+			lines: true,
+			point_size: 0.1,
+			fixed_size: false,
+			additive: true,
+			color: [1,1,1],
+			opacity: 1
+		};
+
+		this.color = vec4.create([1,1,1,1]);
+
+		this.uniforms = {
+			u_point_size: 1,
+			u_perspective: 1,
+			u_point_perspective: 1,
+			u_color: this.color
+		};
+
+		this.geometry_id = -1;
+		this.version = -1;
+		this.mesh = null;
+	}
+
+	LGraphRenderGeometryDOF.widgets_info = {
+		color: { widget: "color" }
+	};
+
+	LGraphRenderGeometryDOF.prototype.updateMesh = function(geometry)
+	{
+		var buffer = this.buffer;
+		if(!this.buffer || this.buffer.data.length != geometry.vertices.length)
+			this.buffer = new GL.Buffer( GL.ARRAY_BUFFER, geometry.vertices,3,GL.DYNAMIC_DRAW);
+		else
+		{
+			this.buffer.data.set( geometry.vertices );
+			this.buffer.upload(GL.DYNAMIC_DRAW);
+		}
+
+		if(!this.mesh)
+			this.mesh = new GL.Mesh();
+
+		this.mesh.addBuffer("vertices",this.buffer);
+		this.geometry_id = this.mesh.id = geometry._id;
+		this.version = this.mesh.version = geometry._version;
+	}
+
+	LGraphRenderGeometryDOF.prototype.onExecute = function() {
+
+		if(!this.properties.enabled)
+			return;
+
+		var geometry = this.getInputData(0);
+		if(!geometry)
+			return;
+		if(this.version != geometry._version || this.geometry_id != geometry._id )
+			this.updateMesh( geometry );
+
+		if(!LiteGraph.LGraphRender.onRequestCameraMatrices)
+		{
+			console.warn("cannot render geometry, LiteGraph.onRequestCameraMatrices is null, remember to fill this with a callback(view_matrix, projection_matrix,viewprojection_matrix) to use 3D rendering from the graph");
+			return;
+		}
+
+		LiteGraph.LGraphRender.onRequestCameraMatrices( view_matrix, projection_matrix,viewprojection_matrix );
+		var shader = null;
+
+		var texture = this.getInputData(2);
+
+		if(texture)
+		{
+			shader = gl.shaders["textured_points"];
+			if(!shader)
+				shader = gl.shaders["textured_points"] = new GL.Shader( LGraphRenderGeometryDOF.vertex_shader_code, LGraphRenderGeometryDOF.fragment_shader_code, { USE_TEXTURED_POINTS:"" });
+		}
+		else
+		{
+			shader = gl.shaders["points"];
+			if(!shader)
+				shader = gl.shaders["points"] = new GL.Shader( LGraphRenderGeometryDOF.vertex_shader_code, LGraphRenderGeometryDOF.fragment_shader_code, { USE_POINTS: "" });
+		}
+
+		this.color.set( this.properties.color );
+		this.color[3] = this.properties.opacity;
+
+		var m = this.getInputData(1);
+		if(m)
+			model_matrix.set(m);
+		else
+			mat4.identity( model_matrix );
+
+		this.uniforms.u_point_size = this.properties.point_size;
+		this.uniforms.u_point_perspective = this.properties.fixed_size ? 0 : 1;
+		this.uniforms.u_perspective = gl.viewport_data[3] * projection_matrix[5];
+
+		shader.uniforms( global_uniforms );
+		shader.uniforms( this.uniforms );
+
+		if(this.properties.opacity >= 1)
+			gl.disable( gl.BLEND );
+		else
+			gl.enable( gl.BLEND );
+
+		gl.enable( gl.DEPTH_TEST );
+		if( this.properties.additive )
+		{
+			gl.blendFunc( gl.SRC_ALPHA, gl.ONE );
+			gl.depthMask( false );
+		}
+		else
+			gl.blendFunc( gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA );
+
+		shader.draw( this.mesh, GL.POINTS );
+
+		gl.disable( gl.BLEND );
+		gl.depthMask( true );
+	}
+
+	LiteGraph.registerNodeType( "geometry/render_dof", LGraphRenderGeometryDOF );
+
+	LGraphRenderGeometryDOF.vertex_shader_code = '\
+		precision mediump float;\n\
+		attribute vec3 a_vertex;\n\
+		varying vec3 v_vertex;\n\
+		attribute vec3 a_normal;\n\
+		varying vec3 v_normal;\n\
+		#ifdef USE_COLOR\n\
+			attribute vec4 a_color;\n\
+			varying vec4 v_color;\n\
+		#endif\n\
+		attribute vec2 a_coord;\n\
+		varying vec2 v_coord;\n\
+		#ifdef USE_SIZE\n\
+			attribute float a_extra;\n\
+		#endif\n\
+		#ifdef USE_INSTANCING\n\
+			attribute mat4 u_model;\n\
+		#else\n\
+			uniform mat4 u_model;\n\
+		#endif\n\
+		uniform mat4 u_viewprojection;\n\
+		uniform float u_point_size;\n\
+		uniform float u_perspective;\n\
+		uniform float u_point_perspective;\n\
+		float computePointSize(float radius, float w)\n\
+		{\n\
+			if(radius < 0.0)\n\
+				return -radius;\n\
+			return u_perspective * radius / w;\n\
+		}\n\
+		void main() {\n\
+			v_coord = a_coord;\n\
+			#ifdef USE_COLOR\n\
+				v_color = a_color;\n\
+			#endif\n\
+			v_vertex = ( u_model * vec4( a_vertex, 1.0 )).xyz;\n\
+			v_normal = ( u_model * vec4( a_normal, 0.0 )).xyz;\n\
+			gl_Position = u_viewprojection * vec4(v_vertex,1.0);\n\
+			gl_PointSize = u_point_size;\n\
+			#ifdef USE_SIZE\n\
+				gl_PointSize = a_extra;\n\
+			#endif\n\
+			if(u_point_perspective != 0.0)\n\
+				gl_PointSize = computePointSize( gl_PointSize, gl_Position.w );\n\
+		}\
+	';
+
+	LGraphRenderGeometryDOF.fragment_shader_code = '\
+		precision mediump float;\n\
+		uniform vec4 u_color;\n\
+		#ifdef USE_COLOR\n\
+			varying vec4 v_color;\n\
+		#endif\n\
+		varying vec2 v_coord;\n\
+		uniform sampler2D u_texture;\n\
+		void main() {\n\
+			vec4 color = u_color;\n\
+			#ifdef USE_TEXTURED_POINTS\n\
+				color *= texture2D(u_texture, gl_PointCoord.xy);\n\
+			#else\n\
+				#ifdef USE_TEXTURE\n\
+				  color *= texture2D(u_texture, v_coord);\n\
+				  if(color.a < 0.1)\n\
+					discard;\n\
+				#endif\n\
+				#ifdef USE_POINTS\n\
+					float dist = length( gl_PointCoord.xy - vec2(0.5) );\n\
+					if( dist > 0.45 )\n\
+						discard;\n\
+				#endif\n\
+			#endif\n\
+			#ifdef USE_COLOR\n\
+				color *= v_color;\n\
+			#endif\n\
+			gl_FragColor = color;\n\
+		}\
+	';
+	*/
+
+
+
+})(this);
+(function(global) {
+    var LiteGraph = global.LiteGraph;
+
+    //Works with Litegl.js to create WebGL nodes
+    if (typeof GL != "undefined") {
+        // Texture Lens *****************************************
+        function LGraphFXLens() {
+            this.addInput("Texture", "Texture");
+            this.addInput("Aberration", "number");
+            this.addInput("Distortion", "number");
+            this.addInput("Blur", "number");
+            this.addOutput("Texture", "Texture");
+            this.properties = {
+                aberration: 1.0,
+                distortion: 1.0,
+                blur: 1.0,
+                precision: LGraphTexture.DEFAULT
+            };
+
+            if (!LGraphFXLens._shader) {
+                LGraphFXLens._shader = new GL.Shader(
+                    GL.Shader.SCREEN_VERTEX_SHADER,
+                    LGraphFXLens.pixel_shader
+                );
+                LGraphFXLens._texture = new GL.Texture(3, 1, {
+                    format: gl.RGB,
+                    wrap: gl.CLAMP_TO_EDGE,
+                    magFilter: gl.LINEAR,
+                    minFilter: gl.LINEAR,
+                    pixel_data: [255, 0, 0, 0, 255, 0, 0, 0, 255]
+                });
+            }
+        }
+
+        LGraphFXLens.title = "Lens";
+        LGraphFXLens.desc = "Camera Lens distortion";
+        LGraphFXLens.widgets_info = {
+            precision: { widget: "combo", values: LGraphTexture.MODE_VALUES }
+        };
+
+        LGraphFXLens.prototype.onExecute = function() {
+            var tex = this.getInputData(0);
+            if (this.properties.precision === LGraphTexture.PASS_THROUGH) {
+                this.setOutputData(0, tex);
+                return;
+            }
+
+            if (!tex) {
+                return;
+            }
+
+            this._tex = LGraphTexture.getTargetTexture(
+                tex,
+                this._tex,
+                this.properties.precision
+            );
+
+            var aberration = this.properties.aberration;
+            if (this.isInputConnected(1)) {
+                aberration = this.getInputData(1);
+                this.properties.aberration = aberration;
+            }
+
+            var distortion = this.properties.distortion;
+            if (this.isInputConnected(2)) {
+                distortion = this.getInputData(2);
+                this.properties.distortion = distortion;
+            }
+
+            var blur = this.properties.blur;
+            if (this.isInputConnected(3)) {
+                blur = this.getInputData(3);
+                this.properties.blur = blur;
+            }
+
+            gl.disable(gl.BLEND);
+            gl.disable(gl.DEPTH_TEST);
+            var mesh = Mesh.getScreenQuad();
+            var shader = LGraphFXLens._shader;
+            //var camera = LS.Renderer._current_camera;
+
+            this._tex.drawTo(function() {
+                tex.bind(0);
+                shader
+                    .uniforms({
+                        u_texture: 0,
+                        u_aberration: aberration,
+                        u_distortion: distortion,
+                        u_blur: blur
+                    })
+                    .draw(mesh);
+            });
+
+            this.setOutputData(0, this._tex);
+        };
+
+        LGraphFXLens.pixel_shader =
+            "precision highp float;\n\
+			precision highp float;\n\
+			varying vec2 v_coord;\n\
+			uniform sampler2D u_texture;\n\
+			uniform vec2 u_camera_planes;\n\
+			uniform float u_aberration;\n\
+			uniform float u_distortion;\n\
+			uniform float u_blur;\n\
+			\n\
+			void main() {\n\
+				vec2 coord = v_coord;\n\
+				float dist = distance(vec2(0.5), coord);\n\
+				vec2 dist_coord = coord - vec2(0.5);\n\
+				float percent = 1.0 + ((0.5 - dist) / 0.5) * u_distortion;\n\
+				dist_coord *= percent;\n\
+				coord = dist_coord + vec2(0.5);\n\
+				vec4 color = texture2D(u_texture,coord, u_blur * dist);\n\
+				color.r = texture2D(u_texture,vec2(0.5) + dist_coord * (1.0+0.01*u_aberration), u_blur * dist ).r;\n\
+				color.b = texture2D(u_texture,vec2(0.5) + dist_coord * (1.0-0.01*u_aberration), u_blur * dist ).b;\n\
+				gl_FragColor = color;\n\
+			}\n\
+			";
+        /*
+			float normalized_tunable_sigmoid(float xs, float k)\n\
+			{\n\
+				xs = xs * 2.0 - 1.0;\n\
+				float signx = sign(xs);\n\
+				float absx = abs(xs);\n\
+				return signx * ((-k - 1.0)*absx)/(2.0*(-2.0*k*absx+k-1.0)) + 0.5;\n\
+			}\n\
+		*/
+
+        LiteGraph.registerNodeType("fx/lens", LGraphFXLens);
+        global.LGraphFXLens = LGraphFXLens;
+
+        /* not working yet
+	function LGraphDepthOfField()
+	{
+		this.addInput("Color","Texture");
+		this.addInput("Linear Depth","Texture");
+		this.addInput("Camera","camera");
+		this.addOutput("Texture","Texture");
+		this.properties = { high_precision: false };
+	}
+
+	LGraphDepthOfField.title = "Depth Of Field";
+	LGraphDepthOfField.desc = "Applies a depth of field effect";
+
+	LGraphDepthOfField.prototype.onExecute = function()
+	{
+		var tex = this.getInputData(0);
+		var depth = this.getInputData(1);
+		var camera = this.getInputData(2);
+
+		if(!tex || !depth || !camera)
+		{
+			this.setOutputData(0, tex);
+			return;
+		}
+
+		var precision = gl.UNSIGNED_BYTE;
+		if(this.properties.high_precision)
+			precision = gl.half_float_ext ? gl.HALF_FLOAT_OES : gl.FLOAT;
+		if(!this._temp_texture || this._temp_texture.type != precision ||
+			this._temp_texture.width != tex.width || this._temp_texture.height != tex.height)
+			this._temp_texture = new GL.Texture( tex.width, tex.height, { type: precision, format: gl.RGBA, filter: gl.LINEAR });
+
+		var shader = LGraphDepthOfField._shader = new GL.Shader( GL.Shader.SCREEN_VERTEX_SHADER, LGraphDepthOfField._pixel_shader );
+
+		var screen_mesh = Mesh.getScreenQuad();
+
+		gl.disable( gl.DEPTH_TEST );
+		gl.disable( gl.BLEND );
+
+		var camera_position = camera.getEye();
+		var focus_point = camera.getCenter();
+		var distance = vec3.distance( camera_position, focus_point );
+		var far = camera.far;
+		var focus_range = distance * 0.5;
+
+		this._temp_texture.drawTo( function() {
+			tex.bind(0);
+			depth.bind(1);
+			shader.uniforms({u_texture:0, u_depth_texture:1, u_resolution: [1/tex.width, 1/tex.height], u_far: far, u_focus_point: distance, u_focus_scale: focus_range }).draw(screen_mesh);
+		});
+
+		this.setOutputData(0, this._temp_texture);
+	}
+
+	//from http://tuxedolabs.blogspot.com.es/2018/05/bokeh-depth-of-field-in-single-pass.html
+	LGraphDepthOfField._pixel_shader = "\n\
+		precision highp float;\n\
+		varying vec2 v_coord;\n\
+		uniform sampler2D u_texture; //Image to be processed\n\
+		uniform sampler2D u_depth_texture; //Linear depth, where 1.0 == far plane\n\
+		uniform vec2 u_iresolution; //The size of a pixel: vec2(1.0/width, 1.0/height)\n\
+		uniform float u_far; // Far plane\n\
+		uniform float u_focus_point;\n\
+		uniform float u_focus_scale;\n\
+		\n\
+		const float GOLDEN_ANGLE = 2.39996323;\n\
+		const float MAX_BLUR_SIZE = 20.0;\n\
+		const float RAD_SCALE = 0.5; // Smaller = nicer blur, larger = faster\n\
+		\n\
+		float getBlurSize(float depth, float focusPoint, float focusScale)\n\
+		{\n\
+		 float coc = clamp((1.0 / focusPoint - 1.0 / depth)*focusScale, -1.0, 1.0);\n\
+		 return abs(coc) * MAX_BLUR_SIZE;\n\
+		}\n\
+		\n\
+		vec3 depthOfField(vec2 texCoord, float focusPoint, float focusScale)\n\
+		{\n\
+		 float centerDepth = texture2D(u_depth_texture, texCoord).r * u_far;\n\
+		 float centerSize = getBlurSize(centerDepth, focusPoint, focusScale);\n\
+		 vec3 color = texture2D(u_texture, v_coord).rgb;\n\
+		 float tot = 1.0;\n\
+		\n\
+		 float radius = RAD_SCALE;\n\
+		 for (float ang = 0.0; ang < 100.0; ang += GOLDEN_ANGLE)\n\
+		 {\n\
+		  vec2 tc = texCoord + vec2(cos(ang), sin(ang)) * u_iresolution * radius;\n\
+			\n\
+		  vec3 sampleColor = texture2D(u_texture, tc).rgb;\n\
+		  float sampleDepth = texture2D(u_depth_texture, tc).r * u_far;\n\
+		  float sampleSize = getBlurSize( sampleDepth, focusPoint, focusScale );\n\
+		  if (sampleDepth > centerDepth)\n\
+		   sampleSize = clamp(sampleSize, 0.0, centerSize*2.0);\n\
+			\n\
+		  float m = smoothstep(radius-0.5, radius+0.5, sampleSize);\n\
+		  color += mix(color/tot, sampleColor, m);\n\
+		  tot += 1.0;\n\
+		  radius += RAD_SCALE/radius;\n\
+		  if(radius>=MAX_BLUR_SIZE)\n\
+			 return color / tot;\n\
+		 }\n\
+		 return color / tot;\n\
+		}\n\
+		void main()\n\
+		{\n\
+			gl_FragColor = vec4( depthOfField( v_coord, u_focus_point, u_focus_scale ), 1.0 );\n\
+			//gl_FragColor = vec4( texture2D(u_depth_texture, v_coord).r );\n\
+		}\n\
+		";
+
+	LiteGraph.registerNodeType("fx/DOF", LGraphDepthOfField );
+	global.LGraphDepthOfField = LGraphDepthOfField;
+	*/
+
+        //*******************************************************
+
+        function LGraphFXBokeh() {
+            this.addInput("Texture", "Texture");
+            this.addInput("Blurred", "Texture");
+            this.addInput("Mask", "Texture");
+            this.addInput("Threshold", "number");
+            this.addOutput("Texture", "Texture");
+            this.properties = {
+                shape: "",
+                size: 10,
+                alpha: 1.0,
+                threshold: 1.0,
+                high_precision: false
+            };
+        }
+
+        LGraphFXBokeh.title = "Bokeh";
+        LGraphFXBokeh.desc = "applies an Bokeh effect";
+
+        LGraphFXBokeh.widgets_info = { shape: { widget: "texture" } };
+
+        LGraphFXBokeh.prototype.onExecute = function() {
+            var tex = this.getInputData(0);
+            var blurred_tex = this.getInputData(1);
+            var mask_tex = this.getInputData(2);
+            if (!tex || !mask_tex || !this.properties.shape) {
+                this.setOutputData(0, tex);
+                return;
+            }
+
+            if (!blurred_tex) {
+                blurred_tex = tex;
+            }
+
+            var shape_tex = LGraphTexture.getTexture(this.properties.shape);
+            if (!shape_tex) {
+                return;
+            }
+
+            var threshold = this.properties.threshold;
+            if (this.isInputConnected(3)) {
+                threshold = this.getInputData(3);
+                this.properties.threshold = threshold;
+            }
+
+            var precision = gl.UNSIGNED_BYTE;
+            if (this.properties.high_precision) {
+                precision = gl.half_float_ext ? gl.HALF_FLOAT_OES : gl.FLOAT;
+            }
+            if (
+                !this._temp_texture ||
+                this._temp_texture.type != precision ||
+                this._temp_texture.width != tex.width ||
+                this._temp_texture.height != tex.height
+            ) {
+                this._temp_texture = new GL.Texture(tex.width, tex.height, {
+                    type: precision,
+                    format: gl.RGBA,
+                    filter: gl.LINEAR
+                });
+            }
+
+            //iterations
+            var size = this.properties.size;
+
+            var first_shader = LGraphFXBokeh._first_shader;
+            if (!first_shader) {
+                first_shader = LGraphFXBokeh._first_shader = new GL.Shader(
+                    Shader.SCREEN_VERTEX_SHADER,
+                    LGraphFXBokeh._first_pixel_shader
+                );
+            }
+
+            var second_shader = LGraphFXBokeh._second_shader;
+            if (!second_shader) {
+                second_shader = LGraphFXBokeh._second_shader = new GL.Shader(
+                    LGraphFXBokeh._second_vertex_shader,
+                    LGraphFXBokeh._second_pixel_shader
+                );
+            }
+
+            var points_mesh = this._points_mesh;
+            if (
+                !points_mesh ||
+                points_mesh._width != tex.width ||
+                points_mesh._height != tex.height ||
+                points_mesh._spacing != 2
+            ) {
+                points_mesh = this.createPointsMesh(tex.width, tex.height, 2);
+            }
+
+            var screen_mesh = Mesh.getScreenQuad();
+
+            var point_size = this.properties.size;
+            var min_light = this.properties.min_light;
+            var alpha = this.properties.alpha;
+
+            gl.disable(gl.DEPTH_TEST);
+            gl.disable(gl.BLEND);
+
+            this._temp_texture.drawTo(function() {
+                tex.bind(0);
+                blurred_tex.bind(1);
+                mask_tex.bind(2);
+                first_shader
+                    .uniforms({
+                        u_texture: 0,
+                        u_texture_blur: 1,
+                        u_mask: 2,
+                        u_texsize: [tex.width, tex.height]
+                    })
+                    .draw(screen_mesh);
+            });
+
+            this._temp_texture.drawTo(function() {
+                //clear because we use blending
+                //gl.clearColor(0.0,0.0,0.0,1.0);
+                //gl.clear( gl.COLOR_BUFFER_BIT );
+                gl.enable(gl.BLEND);
+                gl.blendFunc(gl.ONE, gl.ONE);
+
+                tex.bind(0);
+                shape_tex.bind(3);
+                second_shader
+                    .uniforms({
+                        u_texture: 0,
+                        u_mask: 2,
+                        u_shape: 3,
+                        u_alpha: alpha,
+                        u_threshold: threshold,
+                        u_pointSize: point_size,
+                        u_itexsize: [1.0 / tex.width, 1.0 / tex.height]
+                    })
+                    .draw(points_mesh, gl.POINTS);
+            });
+
+            this.setOutputData(0, this._temp_texture);
+        };
+
+        LGraphFXBokeh.prototype.createPointsMesh = function(
+            width,
+            height,
+            spacing
+        ) {
+            var nwidth = Math.round(width / spacing);
+            var nheight = Math.round(height / spacing);
+
+            var vertices = new Float32Array(nwidth * nheight * 2);
+
+            var ny = -1;
+            var dx = (2 / width) * spacing;
+            var dy = (2 / height) * spacing;
+            for (var y = 0; y < nheight; ++y) {
+                var nx = -1;
+                for (var x = 0; x < nwidth; ++x) {
+                    var pos = y * nwidth * 2 + x * 2;
+                    vertices[pos] = nx;
+                    vertices[pos + 1] = ny;
+                    nx += dx;
+                }
+                ny += dy;
+            }
+
+            this._points_mesh = GL.Mesh.load({ vertices2D: vertices });
+            this._points_mesh._width = width;
+            this._points_mesh._height = height;
+            this._points_mesh._spacing = spacing;
+
+            return this._points_mesh;
+        };
+
+        /*
+	LGraphTextureBokeh._pixel_shader = "precision highp float;\n\
+			varying vec2 a_coord;\n\
+			uniform sampler2D u_texture;\n\
+			uniform sampler2D u_shape;\n\
+			\n\
+			void main() {\n\
+				vec4 color = texture2D( u_texture, gl_PointCoord );\n\
+				color *= v_color * u_alpha;\n\
+				gl_FragColor = color;\n\
+			}\n";
+	*/
+
+        LGraphFXBokeh._first_pixel_shader =
+            "precision highp float;\n\
+			precision highp float;\n\
+			varying vec2 v_coord;\n\
+			uniform sampler2D u_texture;\n\
+			uniform sampler2D u_texture_blur;\n\
+			uniform sampler2D u_mask;\n\
+			\n\
+			void main() {\n\
+				vec4 color = texture2D(u_texture, v_coord);\n\
+				vec4 blurred_color = texture2D(u_texture_blur, v_coord);\n\
+				float mask = texture2D(u_mask, v_coord).x;\n\
+			   gl_FragColor = mix(color, blurred_color, mask);\n\
+			}\n\
+			";
+
+        LGraphFXBokeh._second_vertex_shader =
+            "precision highp float;\n\
+			attribute vec2 a_vertex2D;\n\
+			varying vec4 v_color;\n\
+			uniform sampler2D u_texture;\n\
+			uniform sampler2D u_mask;\n\
+			uniform vec2 u_itexsize;\n\
+			uniform float u_pointSize;\n\
+			uniform float u_threshold;\n\
+			void main() {\n\
+				vec2 coord = a_vertex2D * 0.5 + 0.5;\n\
+				v_color = texture2D( u_texture, coord );\n\
+				v_color += texture2D( u_texture, coord + vec2(u_itexsize.x, 0.0) );\n\
+				v_color += texture2D( u_texture, coord + vec2(0.0, u_itexsize.y));\n\
+				v_color += texture2D( u_texture, coord + u_itexsize);\n\
+				v_color *= 0.25;\n\
+				float mask = texture2D(u_mask, coord).x;\n\
+				float luminance = length(v_color) * mask;\n\
+				/*luminance /= (u_pointSize*u_pointSize)*0.01 */;\n\
+				luminance -= u_threshold;\n\
+				if(luminance < 0.0)\n\
+				{\n\
+					gl_Position.x = -100.0;\n\
+					return;\n\
+				}\n\
+				gl_PointSize = u_pointSize;\n\
+				gl_Position = vec4(a_vertex2D,0.0,1.0);\n\
+			}\n\
+			";
+
+        LGraphFXBokeh._second_pixel_shader =
+            "precision highp float;\n\
+			varying vec4 v_color;\n\
+			uniform sampler2D u_shape;\n\
+			uniform float u_alpha;\n\
+			\n\
+			void main() {\n\
+				vec4 color = texture2D( u_shape, gl_PointCoord );\n\
+				color *= v_color * u_alpha;\n\
+				gl_FragColor = color;\n\
+			}\n";
+
+        LiteGraph.registerNodeType("fx/bokeh", LGraphFXBokeh);
+        global.LGraphFXBokeh = LGraphFXBokeh;
+
+        //************************************************
+
+        function LGraphFXGeneric() {
+            this.addInput("Texture", "Texture");
+            this.addInput("value1", "number");
+            this.addInput("value2", "number");
+            this.addOutput("Texture", "Texture");
+            this.properties = {
+                fx: "halftone",
+                value1: 1,
+                value2: 1,
+                precision: LGraphTexture.DEFAULT
+            };
+        }
+
+        LGraphFXGeneric.title = "FX";
+        LGraphFXGeneric.desc = "applies an FX from a list";
+
+        LGraphFXGeneric.widgets_info = {
+            fx: {
+                widget: "combo",
+                values: ["halftone", "pixelate", "lowpalette", "noise", "gamma"]
+            },
+            precision: { widget: "combo", values: LGraphTexture.MODE_VALUES }
+        };
+        LGraphFXGeneric.shaders = {};
+
+        LGraphFXGeneric.prototype.onExecute = function() {
+            if (!this.isOutputConnected(0)) {
+                return;
+            } //saves work
+
+            var tex = this.getInputData(0);
+            if (this.properties.precision === LGraphTexture.PASS_THROUGH) {
+                this.setOutputData(0, tex);
+                return;
+            }
+
+            if (!tex) {
+                return;
+            }
+
+            this._tex = LGraphTexture.getTargetTexture(
+                tex,
+                this._tex,
+                this.properties.precision
+            );
+
+            //iterations
+            var value1 = this.properties.value1;
+            if (this.isInputConnected(1)) {
+                value1 = this.getInputData(1);
+                this.properties.value1 = value1;
+            }
+
+            var value2 = this.properties.value2;
+            if (this.isInputConnected(2)) {
+                value2 = this.getInputData(2);
+                this.properties.value2 = value2;
+            }
+
+            var fx = this.properties.fx;
+            var shader = LGraphFXGeneric.shaders[fx];
+            if (!shader) {
+                var pixel_shader_code = LGraphFXGeneric["pixel_shader_" + fx];
+                if (!pixel_shader_code) {
+                    return;
+                }
+
+                shader = LGraphFXGeneric.shaders[fx] = new GL.Shader(
+                    Shader.SCREEN_VERTEX_SHADER,
+                    pixel_shader_code
+                );
+            }
+
+            gl.disable(gl.BLEND);
+            gl.disable(gl.DEPTH_TEST);
+            var mesh = Mesh.getScreenQuad();
+            var camera = global.LS ? LS.Renderer._current_camera : null;
+            var camera_planes;
+            if (camera) {
+                camera_planes = [
+                    LS.Renderer._current_camera.near,
+                    LS.Renderer._current_camera.far
+                ];
+            } else {
+                camera_planes = [1, 100];
+            }
+
+            var noise = null;
+            if (fx == "noise") {
+                noise = LGraphTexture.getNoiseTexture();
+            }
+
+            this._tex.drawTo(function() {
+                tex.bind(0);
+                if (fx == "noise") {
+                    noise.bind(1);
+                }
+
+                shader
+                    .uniforms({
+                        u_texture: 0,
+                        u_noise: 1,
+                        u_size: [tex.width, tex.height],
+                        u_rand: [Math.random(), Math.random()],
+                        u_value1: value1,
+                        u_value2: value2,
+                        u_camera_planes: camera_planes
+                    })
+                    .draw(mesh);
+            });
+
+            this.setOutputData(0, this._tex);
+        };
+
+        LGraphFXGeneric.pixel_shader_halftone =
+            "precision highp float;\n\
+			varying vec2 v_coord;\n\
+			uniform sampler2D u_texture;\n\
+			uniform vec2 u_camera_planes;\n\
+			uniform vec2 u_size;\n\
+			uniform float u_value1;\n\
+			uniform float u_value2;\n\
+			\n\
+			float pattern() {\n\
+				float s = sin(u_value1 * 3.1415), c = cos(u_value1 * 3.1415);\n\
+				vec2 tex = v_coord * u_size.xy;\n\
+				vec2 point = vec2(\n\
+				   c * tex.x - s * tex.y ,\n\
+				   s * tex.x + c * tex.y \n\
+				) * u_value2;\n\
+				return (sin(point.x) * sin(point.y)) * 4.0;\n\
+			}\n\
+			void main() {\n\
+				vec4 color = texture2D(u_texture, v_coord);\n\
+				float average = (color.r + color.g + color.b) / 3.0;\n\
+				gl_FragColor = vec4(vec3(average * 10.0 - 5.0 + pattern()), color.a);\n\
+			}\n";
+
+        LGraphFXGeneric.pixel_shader_pixelate =
+            "precision highp float;\n\
+			varying vec2 v_coord;\n\
+			uniform sampler2D u_texture;\n\
+			uniform vec2 u_camera_planes;\n\
+			uniform vec2 u_size;\n\
+			uniform float u_value1;\n\
+			uniform float u_value2;\n\
+			\n\
+			void main() {\n\
+				vec2 coord = vec2( floor(v_coord.x * u_value1) / u_value1, floor(v_coord.y * u_value2) / u_value2 );\n\
+				vec4 color = texture2D(u_texture, coord);\n\
+				gl_FragColor = color;\n\
+			}\n";
+
+        LGraphFXGeneric.pixel_shader_lowpalette =
+            "precision highp float;\n\
+			varying vec2 v_coord;\n\
+			uniform sampler2D u_texture;\n\
+			uniform vec2 u_camera_planes;\n\
+			uniform vec2 u_size;\n\
+			uniform float u_value1;\n\
+			uniform float u_value2;\n\
+			\n\
+			void main() {\n\
+				vec4 color = texture2D(u_texture, v_coord);\n\
+				gl_FragColor = floor(color * u_value1) / u_value1;\n\
+			}\n";
+
+        LGraphFXGeneric.pixel_shader_noise =
+            "precision highp float;\n\
+			varying vec2 v_coord;\n\
+			uniform sampler2D u_texture;\n\
+			uniform sampler2D u_noise;\n\
+			uniform vec2 u_size;\n\
+			uniform float u_value1;\n\
+			uniform float u_value2;\n\
+			uniform vec2 u_rand;\n\
+			\n\
+			void main() {\n\
+				vec4 color = texture2D(u_texture, v_coord);\n\
+				vec3 noise = texture2D(u_noise, v_coord * vec2(u_size.x / 512.0, u_size.y / 512.0) + u_rand).xyz - vec3(0.5);\n\
+				gl_FragColor = vec4( color.xyz + noise * u_value1, color.a );\n\
+			}\n";
+
+        LGraphFXGeneric.pixel_shader_gamma =
+            "precision highp float;\n\
+			varying vec2 v_coord;\n\
+			uniform sampler2D u_texture;\n\
+			uniform float u_value1;\n\
+			\n\
+			void main() {\n\
+				vec4 color = texture2D(u_texture, v_coord);\n\
+				float gamma = 1.0 / u_value1;\n\
+				gl_FragColor = vec4( pow( color.xyz, vec3(gamma) ), color.a );\n\
+			}\n";
+
+        LiteGraph.registerNodeType("fx/generic", LGraphFXGeneric);
+        global.LGraphFXGeneric = LGraphFXGeneric;
+
+        // Vigneting ************************************
+
+        function LGraphFXVigneting() {
+            this.addInput("Tex.", "Texture");
+            this.addInput("intensity", "number");
+
+            this.addOutput("Texture", "Texture");
+            this.properties = {
+                intensity: 1,
+                invert: false,
+                precision: LGraphTexture.DEFAULT
+            };
+
+            if (!LGraphFXVigneting._shader) {
+                LGraphFXVigneting._shader = new GL.Shader(
+                    Shader.SCREEN_VERTEX_SHADER,
+                    LGraphFXVigneting.pixel_shader
+                );
+            }
+        }
+
+        LGraphFXVigneting.title = "Vigneting";
+        LGraphFXVigneting.desc = "Vigneting";
+
+        LGraphFXVigneting.widgets_info = {
+            precision: { widget: "combo", values: LGraphTexture.MODE_VALUES }
+        };
+
+        LGraphFXVigneting.prototype.onExecute = function() {
+            var tex = this.getInputData(0);
+
+            if (this.properties.precision === LGraphTexture.PASS_THROUGH) {
+                this.setOutputData(0, tex);
+                return;
+            }
+
+            if (!tex) {
+                return;
+            }
+
+            this._tex = LGraphTexture.getTargetTexture(
+                tex,
+                this._tex,
+                this.properties.precision
+            );
+
+            var intensity = this.properties.intensity;
+            if (this.isInputConnected(1)) {
+                intensity = this.getInputData(1);
+                this.properties.intensity = intensity;
+            }
+
+            gl.disable(gl.BLEND);
+            gl.disable(gl.DEPTH_TEST);
+
+            var mesh = Mesh.getScreenQuad();
+            var shader = LGraphFXVigneting._shader;
+            var invert = this.properties.invert;
+
+            this._tex.drawTo(function() {
+                tex.bind(0);
+                shader
+                    .uniforms({
+                        u_texture: 0,
+                        u_intensity: intensity,
+                        u_isize: [1 / tex.width, 1 / tex.height],
+                        u_invert: invert ? 1 : 0
+                    })
+                    .draw(mesh);
+            });
+
+            this.setOutputData(0, this._tex);
+        };
+
+        LGraphFXVigneting.pixel_shader =
+            "precision highp float;\n\
+			precision highp float;\n\
+			varying vec2 v_coord;\n\
+			uniform sampler2D u_texture;\n\
+			uniform float u_intensity;\n\
+			uniform int u_invert;\n\
+			\n\
+			void main() {\n\
+				float luminance = 1.0 - length( v_coord - vec2(0.5) ) * 1.414;\n\
+				vec4 color = texture2D(u_texture, v_coord);\n\
+				if(u_invert == 1)\n\
+					luminance = 1.0 - luminance;\n\
+				luminance = mix(1.0, luminance, u_intensity);\n\
+			   gl_FragColor = vec4( luminance * color.xyz, color.a);\n\
+			}\n\
+			";
+
+        LiteGraph.registerNodeType("fx/vigneting", LGraphFXVigneting);
+        global.LGraphFXVigneting = LGraphFXVigneting;
+    }
+})(this);
+
+(function(global) {
+    var LiteGraph = global.LiteGraph;
+    var MIDI_COLOR = "#243";
+
+    function MIDIEvent(data) {
+        this.channel = 0;
+        this.cmd = 0;
+        this.data = new Uint32Array(3);
+
+        if (data) {
+            this.setup(data);
+        }
+    }
+
+    LiteGraph.MIDIEvent = MIDIEvent;
+
+    MIDIEvent.prototype.fromJSON = function(o) {
+        this.setup(o.data);
+    };
+
+    MIDIEvent.prototype.setup = function(data) {
+        var raw_data = data;
+        if (data.constructor === Object) {
+            raw_data = data.data;
+        }
+
+        this.data.set(raw_data);
+
+        var midiStatus = raw_data[0];
+        this.status = midiStatus;
+
+        var midiCommand = midiStatus & 0xf0;
+
+        if (midiStatus >= 0xf0) {
+            this.cmd = midiStatus;
+        } else {
+            this.cmd = midiCommand;
+        }
+
+        if (this.cmd == MIDIEvent.NOTEON && this.velocity == 0) {
+            this.cmd = MIDIEvent.NOTEOFF;
+        }
+
+        this.cmd_str = MIDIEvent.commands[this.cmd] || "";
+
+        if (
+            midiCommand >= MIDIEvent.NOTEON ||
+            midiCommand <= MIDIEvent.NOTEOFF
+        ) {
+            this.channel = midiStatus & 0x0f;
+        }
+    };
+
+    Object.defineProperty(MIDIEvent.prototype, "velocity", {
+        get: function() {
+            if (this.cmd == MIDIEvent.NOTEON) {
+                return this.data[2];
+            }
+            return -1;
+        },
+        set: function(v) {
+            this.data[2] = v; //  v / 127;
+        },
+        enumerable: true
+    });
+
+    MIDIEvent.notes = [
+        "A",
+        "A#",
+        "B",
+        "C",
+        "C#",
+        "D",
+        "D#",
+        "E",
+        "F",
+        "F#",
+        "G",
+        "G#"
+    ];
+    MIDIEvent.note_to_index = {
+        A: 0,
+        "A#": 1,
+        B: 2,
+        C: 3,
+        "C#": 4,
+        D: 5,
+        "D#": 6,
+        E: 7,
+        F: 8,
+        "F#": 9,
+        G: 10,
+        "G#": 11
+    };
+
+    Object.defineProperty(MIDIEvent.prototype, "note", {
+        get: function() {
+            if (this.cmd != MIDIEvent.NOTEON) {
+                return -1;
+            }
+            return MIDIEvent.toNoteString(this.data[1], true);
+        },
+        set: function(v) {
+            throw "notes cannot be assigned this way, must modify the data[1]";
+        },
+        enumerable: true
+    });
+
+    Object.defineProperty(MIDIEvent.prototype, "octave", {
+        get: function() {
+            if (this.cmd != MIDIEvent.NOTEON) {
+                return -1;
+            }
+            var octave = this.data[1] - 24;
+            return Math.floor(octave / 12 + 1);
+        },
+        set: function(v) {
+            throw "octave cannot be assigned this way, must modify the data[1]";
+        },
+        enumerable: true
+    });
+
+    //returns HZs
+    MIDIEvent.prototype.getPitch = function() {
+        return Math.pow(2, (this.data[1] - 69) / 12) * 440;
+    };
+
+    MIDIEvent.computePitch = function(note) {
+        return Math.pow(2, (note - 69) / 12) * 440;
+    };
+
+    MIDIEvent.prototype.getCC = function() {
+        return this.data[1];
+    };
+
+    MIDIEvent.prototype.getCCValue = function() {
+        return this.data[2];
+    };
+
+    //not tested, there is a formula missing here
+    MIDIEvent.prototype.getPitchBend = function() {
+        return this.data[1] + (this.data[2] << 7) - 8192;
+    };
+
+    MIDIEvent.computePitchBend = function(v1, v2) {
+        return v1 + (v2 << 7) - 8192;
+    };
+
+    MIDIEvent.prototype.setCommandFromString = function(str) {
+        this.cmd = MIDIEvent.computeCommandFromString(str);
+    };
+
+    MIDIEvent.computeCommandFromString = function(str) {
+        if (!str) {
+            return 0;
+        }
+
+        if (str && str.constructor === Number) {
+            return str;
+        }
+
+        str = str.toUpperCase();
+        switch (str) {
+            case "NOTE ON":
+            case "NOTEON":
+                return MIDIEvent.NOTEON;
+                break;
+            case "NOTE OFF":
+            case "NOTEOFF":
+                return MIDIEvent.NOTEON;
+                break;
+            case "KEY PRESSURE":
+            case "KEYPRESSURE":
+                return MIDIEvent.KEYPRESSURE;
+                break;
+            case "CONTROLLER CHANGE":
+            case "CONTROLLERCHANGE":
+            case "CC":
+                return MIDIEvent.CONTROLLERCHANGE;
+                break;
+            case "PROGRAM CHANGE":
+            case "PROGRAMCHANGE":
+            case "PC":
+                return MIDIEvent.PROGRAMCHANGE;
+                break;
+            case "CHANNEL PRESSURE":
+            case "CHANNELPRESSURE":
+                return MIDIEvent.CHANNELPRESSURE;
+                break;
+            case "PITCH BEND":
+            case "PITCHBEND":
+                return MIDIEvent.PITCHBEND;
+                break;
+            case "TIME TICK":
+            case "TIMETICK":
+                return MIDIEvent.TIMETICK;
+                break;
+            default:
+                return Number(str); //asume its a hex code
+        }
+    };
+
+    //transform from a pitch number to string like "C4"
+    MIDIEvent.toNoteString = function(d, skip_octave) {
+        d = Math.round(d); //in case it has decimals
+        var note = d - 21;
+        var octave = Math.floor((d - 24) / 12 + 1);
+        note = note % 12;
+        if (note < 0) {
+            note = 12 + note;
+        }
+        return MIDIEvent.notes[note] + (skip_octave ? "" : octave);
+    };
+
+    MIDIEvent.NoteStringToPitch = function(str) {
+        str = str.toUpperCase();
+        var note = str[0];
+        var octave = 4;
+
+        if (str[1] == "#") {
+            note += "#";
+            if (str.length > 2) {
+                octave = Number(str[2]);
+            }
+        } else {
+            if (str.length > 1) {
+                octave = Number(str[1]);
+            }
+        }
+        var pitch = MIDIEvent.note_to_index[note];
+        if (pitch == null) {
+            return null;
+        }
+        return (octave - 1) * 12 + pitch + 21;
+    };
+
+    MIDIEvent.prototype.toString = function() {
+        var str = "" + this.channel + ". ";
+        switch (this.cmd) {
+            case MIDIEvent.NOTEON:
+                str += "NOTEON " + MIDIEvent.toNoteString(this.data[1]);
+                break;
+            case MIDIEvent.NOTEOFF:
+                str += "NOTEOFF " + MIDIEvent.toNoteString(this.data[1]);
+                break;
+            case MIDIEvent.CONTROLLERCHANGE:
+                str += "CC " + this.data[1] + " " + this.data[2];
+                break;
+            case MIDIEvent.PROGRAMCHANGE:
+                str += "PC " + this.data[1];
+                break;
+            case MIDIEvent.PITCHBEND:
+                str += "PITCHBEND " + this.getPitchBend();
+                break;
+            case MIDIEvent.KEYPRESSURE:
+                str += "KEYPRESS " + this.data[1];
+                break;
+        }
+
+        return str;
+    };
+
+    MIDIEvent.prototype.toHexString = function() {
+        var str = "";
+        for (var i = 0; i < this.data.length; i++) {
+            str += this.data[i].toString(16) + " ";
+        }
+    };
+
+    MIDIEvent.prototype.toJSON = function() {
+        return {
+            data: [this.data[0], this.data[1], this.data[2]],
+            object_class: "MIDIEvent"
+        };
+    };
+
+    MIDIEvent.NOTEOFF = 0x80;
+    MIDIEvent.NOTEON = 0x90;
+    MIDIEvent.KEYPRESSURE = 0xa0;
+    MIDIEvent.CONTROLLERCHANGE = 0xb0;
+    MIDIEvent.PROGRAMCHANGE = 0xc0;
+    MIDIEvent.CHANNELPRESSURE = 0xd0;
+    MIDIEvent.PITCHBEND = 0xe0;
+    MIDIEvent.TIMETICK = 0xf8;
+
+    MIDIEvent.commands = {
+        0x80: "note off",
+        0x90: "note on",
+        0xa0: "key pressure",
+        0xb0: "controller change",
+        0xc0: "program change",
+        0xd0: "channel pressure",
+        0xe0: "pitch bend",
+        0xf0: "system",
+        0xf2: "Song pos",
+        0xf3: "Song select",
+        0xf6: "Tune request",
+        0xf8: "time tick",
+        0xfa: "Start Song",
+        0xfb: "Continue Song",
+        0xfc: "Stop Song",
+        0xfe: "Sensing",
+        0xff: "Reset"
+    };
+
+    MIDIEvent.commands_short = {
+        0x80: "NOTEOFF",
+        0x90: "NOTEOFF",
+        0xa0: "KEYP",
+        0xb0: "CC",
+        0xc0: "PC",
+        0xd0: "CP",
+        0xe0: "PB",
+        0xf0: "SYS",
+        0xf2: "POS",
+        0xf3: "SELECT",
+        0xf6: "TUNEREQ",
+        0xf8: "TT",
+        0xfa: "START",
+        0xfb: "CONTINUE",
+        0xfc: "STOP",
+        0xfe: "SENS",
+        0xff: "RESET"
+    };
+
+    MIDIEvent.commands_reversed = {};
+    for (var i in MIDIEvent.commands) {
+        MIDIEvent.commands_reversed[MIDIEvent.commands[i]] = i;
+    }
+
+    //MIDI wrapper, instantiate by MIDIIn and MIDIOut
+    function MIDIInterface(on_ready, on_error) {
+        if (!navigator.requestMIDIAccess) {
+            this.error = "not suppoorted";
+            if (on_error) {
+                on_error("Not supported");
+            } else {
+                console.error("MIDI NOT SUPPORTED, enable by chrome://flags");
+            }
+            return;
+        }
+
+        this.on_ready = on_ready;
+
+        this.state = {
+            note: [],
+            cc: []
+        };
+
+		this.input_ports = null;
+		this.input_ports_info = [];
+		this.output_ports = null;
+		this.output_ports_info = [];
+
+        navigator.requestMIDIAccess().then(this.onMIDISuccess.bind(this), this.onMIDIFailure.bind(this));
+    }
+
+    MIDIInterface.input = null;
+
+    MIDIInterface.MIDIEvent = MIDIEvent;
+
+    MIDIInterface.prototype.onMIDISuccess = function(midiAccess) {
+        console.log("MIDI ready!");
+        console.log(midiAccess);
+        this.midi = midiAccess; // store in the global (in real usage, would probably keep in an object instance)
+        this.updatePorts();
+
+        if (this.on_ready) {
+            this.on_ready(this);
+        }
+    };
+
+    MIDIInterface.prototype.updatePorts = function() {
+        var midi = this.midi;
+        this.input_ports = midi.inputs;
+		this.input_ports_info = [];
+        this.output_ports = midi.outputs;
+		this.output_ports_info = [];
+
+        var num = 0;
+
+        var it = this.input_ports.values();
+        var it_value = it.next();
+        while (it_value && it_value.done === false) {
+            var port_info = it_value.value;
+			this.input_ports_info.push(port_info);
+            console.log( "Input port [type:'" + port_info.type + "'] id:'" + port_info.id + "' manufacturer:'" + port_info.manufacturer + "' name:'" + port_info.name + "' version:'" + port_info.version + "'" );
+            num++;
+            it_value = it.next();
+        }
+        this.num_input_ports = num;
+
+        num = 0;
+        var it = this.output_ports.values();
+        var it_value = it.next();
+        while (it_value && it_value.done === false) {
+            var port_info = it_value.value;
+			this.output_ports_info.push(port_info);
+            console.log( "Output port [type:'" + port_info.type + "'] id:'" + port_info.id + "' manufacturer:'" + port_info.manufacturer + "' name:'" + port_info.name + "' version:'" + port_info.version + "'" );
+            num++;
+            it_value = it.next();
+        }
+        this.num_output_ports = num;
+    };
+
+    MIDIInterface.prototype.onMIDIFailure = function(msg) {
+        console.error("Failed to get MIDI access - " + msg);
+    };
+
+    MIDIInterface.prototype.openInputPort = function(port, callback) {
+        var input_port = this.input_ports.get("input-" + port);
+        if (!input_port) {
+            return false;
+        }
+        MIDIInterface.input = this;
+        var that = this;
+
+        input_port.onmidimessage = function(a) {
+            var midi_event = new MIDIEvent(a.data);
+            that.updateState(midi_event);
+            if (callback) {
+                callback(a.data, midi_event);
+            }
+            if (MIDIInterface.on_message) {
+                MIDIInterface.on_message(a.data, midi_event);
+            }
+        };
+        console.log("port open: ", input_port);
+        return true;
+    };
+
+    MIDIInterface.parseMsg = function(data) {};
+
+    MIDIInterface.prototype.updateState = function(midi_event) {
+        switch (midi_event.cmd) {
+            case MIDIEvent.NOTEON:
+                this.state.note[midi_event.value1 | 0] = midi_event.value2;
+                break;
+            case MIDIEvent.NOTEOFF:
+                this.state.note[midi_event.value1 | 0] = 0;
+                break;
+            case MIDIEvent.CONTROLLERCHANGE:
+                this.state.cc[midi_event.getCC()] = midi_event.getCCValue();
+                break;
+        }
+    };
+
+    MIDIInterface.prototype.sendMIDI = function(port, midi_data) {
+        if (!midi_data) {
+            return;
+        }
+
+        var output_port = this.output_ports_info[port];//this.output_ports.get("output-" + port);
+        if (!output_port) {
+            return;
+        }
+
+        MIDIInterface.output = this;
+
+        if (midi_data.constructor === MIDIEvent) {
+            output_port.send(midi_data.data);
+        } else {
+            output_port.send(midi_data);
+        }
+    };
+
+    function LGMIDIIn() {
+        this.addOutput("on_midi", LiteGraph.EVENT);
+        this.addOutput("out", "midi");
+        this.properties = { port: 0 };
+        this._last_midi_event = null;
+        this._current_midi_event = null;
+        this.boxcolor = "#AAA";
+        this._last_time = 0;
+
+        var that = this;
+        new MIDIInterface(function(midi) {
+            //open
+            that._midi = midi;
+            if (that._waiting) {
+                that.onStart();
+            }
+            that._waiting = false;
+        });
+    }
+
+    LGMIDIIn.MIDIInterface = MIDIInterface;
+
+    LGMIDIIn.title = "MIDI Input";
+    LGMIDIIn.desc = "Reads MIDI from a input port";
+    LGMIDIIn.color = MIDI_COLOR;
+
+    LGMIDIIn.prototype.getPropertyInfo = function(name) {
+        if (!this._midi) {
+            return;
+        }
+
+        if (name == "port") {
+            var values = {};
+            for (var i = 0; i < this._midi.input_ports_info.length; ++i) {
+                var input = this._midi.input_ports_info[i];
+                values[i] = i + ".- " + input.name + " version:" + input.version;
+            }
+            return { type: "enum", values: values };
+        }
+    };
+
+    LGMIDIIn.prototype.onStart = function() {
+        if (this._midi) {
+            this._midi.openInputPort(
+                this.properties.port,
+                this.onMIDIEvent.bind(this)
+            );
+        } else {
+            this._waiting = true;
+        }
+    };
+
+    LGMIDIIn.prototype.onMIDIEvent = function(data, midi_event) {
+        this._last_midi_event = midi_event;
+        this.boxcolor = "#AFA";
+        this._last_time = LiteGraph.getTime();
+        this.trigger("on_midi", midi_event);
+        if (midi_event.cmd == MIDIEvent.NOTEON) {
+            this.trigger("on_noteon", midi_event);
+        } else if (midi_event.cmd == MIDIEvent.NOTEOFF) {
+            this.trigger("on_noteoff", midi_event);
+        } else if (midi_event.cmd == MIDIEvent.CONTROLLERCHANGE) {
+            this.trigger("on_cc", midi_event);
+        } else if (midi_event.cmd == MIDIEvent.PROGRAMCHANGE) {
+            this.trigger("on_pc", midi_event);
+        } else if (midi_event.cmd == MIDIEvent.PITCHBEND) {
+            this.trigger("on_pitchbend", midi_event);
+        }
+    };
+
+    LGMIDIIn.prototype.onDrawBackground = function(ctx) {
+        this.boxcolor = "#AAA";
+        if (!this.flags.collapsed && this._last_midi_event) {
+            ctx.fillStyle = "white";
+            var now = LiteGraph.getTime();
+            var f = 1.0 - Math.max(0, (now - this._last_time) * 0.001);
+            if (f > 0) {
+                var t = ctx.globalAlpha;
+                ctx.globalAlpha *= f;
+                ctx.font = "12px Tahoma";
+                ctx.fillText(
+                    this._last_midi_event.toString(),
+                    2,
+                    this.size[1] * 0.5 + 3
+                );
+                //ctx.fillRect(0,0,this.size[0],this.size[1]);
+                ctx.globalAlpha = t;
+            }
+        }
+    };
+
+    LGMIDIIn.prototype.onExecute = function() {
+        if (this.outputs) {
+            var last = this._last_midi_event;
+            for (var i = 0; i < this.outputs.length; ++i) {
+                var output = this.outputs[i];
+                var v = null;
+                switch (output.name) {
+                    case "midi":
+                        v = this._midi;
+                        break;
+                    case "last_midi":
+                        v = last;
+                        break;
+                    default:
+                        continue;
+                }
+                this.setOutputData(i, v);
+            }
+        }
+    };
+
+    LGMIDIIn.prototype.onGetOutputs = function() {
+        return [
+            ["last_midi", "midi"],
+            ["on_midi", LiteGraph.EVENT],
+            ["on_noteon", LiteGraph.EVENT],
+            ["on_noteoff", LiteGraph.EVENT],
+            ["on_cc", LiteGraph.EVENT],
+            ["on_pc", LiteGraph.EVENT],
+            ["on_pitchbend", LiteGraph.EVENT]
+        ];
+    };
+
+    LiteGraph.registerNodeType("midi/input", LGMIDIIn);
+
+    function LGMIDIOut() {
+        this.addInput("send", LiteGraph.EVENT);
+        this.properties = { port: 0 };
+
+        var that = this;
+        new MIDIInterface(function(midi) {
+            that._midi = midi;
+			that.widget.options.values = that.getMIDIOutputs();
+        });
+		this.widget = this.addWidget("combo","Device",this.properties.port,{ property: "port", values: this.getMIDIOutputs.bind(this) });
+		this.size = [340,60];
+    }
+
+    LGMIDIOut.MIDIInterface = MIDIInterface;
+
+    LGMIDIOut.title = "MIDI Output";
+    LGMIDIOut.desc = "Sends MIDI to output channel";
+    LGMIDIOut.color = MIDI_COLOR;
+
+    LGMIDIOut.prototype.onGetPropertyInfo = function(name) {
+        if (!this._midi) {
+            return;
+        }
+
+        if (name == "port") {
+			var values = this.getMIDIOutputs();
+            return { type: "enum", values: values };
+        }
+    };
+	LGMIDIOut.default_ports = {0:"unknown"};
+
+	LGMIDIOut.prototype.getMIDIOutputs = function()
+	{
+		var values = {};
+		if(!this._midi)
+			return LGMIDIOut.default_ports;
+		if(this._midi.output_ports_info)
+		for (var i = 0; i < this._midi.output_ports_info.length; ++i) {
+			var output = this._midi.output_ports_info[i];
+			if(!output)
+				continue;
+			var name = i + ".- " + output.name + " version:" + output.version;
+			values[i] = name;
+		}
+		return values;
+	}
+
+    LGMIDIOut.prototype.onAction = function(event, midi_event) {
+        //console.log(midi_event);
+        if (!this._midi) {
+            return;
+        }
+        if (event == "send") {
+            this._midi.sendMIDI(this.properties.port, midi_event);
+        }
+        this.trigger("midi", midi_event);
+    };
+
+    LGMIDIOut.prototype.onGetInputs = function() {
+        return [["send", LiteGraph.ACTION]];
+    };
+
+    LGMIDIOut.prototype.onGetOutputs = function() {
+        return [["on_midi", LiteGraph.EVENT]];
+    };
+
+    LiteGraph.registerNodeType("midi/output", LGMIDIOut);
+
+
+    function LGMIDIShow() {
+        this.addInput("on_midi", LiteGraph.EVENT);
+        this._str = "";
+        this.size = [200, 40];
+    }
+
+    LGMIDIShow.title = "MIDI Show";
+    LGMIDIShow.desc = "Shows MIDI in the graph";
+    LGMIDIShow.color = MIDI_COLOR;
+
+    LGMIDIShow.prototype.getTitle = function() {
+        if (this.flags.collapsed) {
+            return this._str;
+        }
+        return this.title;
+    };
+
+    LGMIDIShow.prototype.onAction = function(event, midi_event) {
+        if (!midi_event) {
+            return;
+        }
+        if (midi_event.constructor === MIDIEvent) {
+            this._str = midi_event.toString();
+        } else {
+            this._str = "???";
+        }
+    };
+
+    LGMIDIShow.prototype.onDrawForeground = function(ctx) {
+        if (!this._str || this.flags.collapsed) {
+            return;
+        }
+
+        ctx.font = "30px Arial";
+        ctx.fillText(this._str, 10, this.size[1] * 0.8);
+    };
+
+    LGMIDIShow.prototype.onGetInputs = function() {
+        return [["in", LiteGraph.ACTION]];
+    };
+
+    LGMIDIShow.prototype.onGetOutputs = function() {
+        return [["on_midi", LiteGraph.EVENT]];
+    };
+
+    LiteGraph.registerNodeType("midi/show", LGMIDIShow);
+
+    function LGMIDIFilter() {
+        this.properties = {
+            channel: -1,
+            cmd: -1,
+            min_value: -1,
+            max_value: -1
+        };
+
+        var that = this;
+        this._learning = false;
+        this.addWidget("button", "Learn", "", function() {
+            that._learning = true;
+            that.boxcolor = "#FA3";
+        });
+
+        this.addInput("in", LiteGraph.EVENT);
+        this.addOutput("on_midi", LiteGraph.EVENT);
+        this.boxcolor = "#AAA";
+    }
+
+    LGMIDIFilter.title = "MIDI Filter";
+    LGMIDIFilter.desc = "Filters MIDI messages";
+    LGMIDIFilter.color = MIDI_COLOR;
+
+    LGMIDIFilter["@cmd"] = {
+        type: "enum",
+        title: "Command",
+        values: MIDIEvent.commands_reversed
+    };
+
+    LGMIDIFilter.prototype.getTitle = function() {
+        var str = null;
+        if (this.properties.cmd == -1) {
+            str = "Nothing";
+        } else {
+            str = MIDIEvent.commands_short[this.properties.cmd] || "Unknown";
+        }
+
+        if (
+            this.properties.min_value != -1 &&
+            this.properties.max_value != -1
+        ) {
+            str +=
+                " " +
+                (this.properties.min_value == this.properties.max_value
+                    ? this.properties.max_value
+                    : this.properties.min_value +
+                      ".." +
+                      this.properties.max_value);
+        }
+
+        return "Filter: " + str;
+    };
+
+    LGMIDIFilter.prototype.onPropertyChanged = function(name, value) {
+        if (name == "cmd") {
+            var num = Number(value);
+            if (isNaN(num)) {
+                num = MIDIEvent.commands[value] || 0;
+            }
+            this.properties.cmd = num;
+        }
+    };
+
+    LGMIDIFilter.prototype.onAction = function(event, midi_event) {
+        if (!midi_event || midi_event.constructor !== MIDIEvent) {
+            return;
+        }
+
+        if (this._learning) {
+            this._learning = false;
+            this.boxcolor = "#AAA";
+            this.properties.channel = midi_event.channel;
+            this.properties.cmd = midi_event.cmd;
+            this.properties.min_value = this.properties.max_value =
+                midi_event.data[1];
+        } else {
+            if (
+                this.properties.channel != -1 &&
+                midi_event.channel != this.properties.channel
+            ) {
+                return;
+            }
+            if (
+                this.properties.cmd != -1 &&
+                midi_event.cmd != this.properties.cmd
+            ) {
+                return;
+            }
+            if (
+                this.properties.min_value != -1 &&
+                midi_event.data[1] < this.properties.min_value
+            ) {
+                return;
+            }
+            if (
+                this.properties.max_value != -1 &&
+                midi_event.data[1] > this.properties.max_value
+            ) {
+                return;
+            }
+        }
+
+        this.trigger("on_midi", midi_event);
+    };
+
+    LiteGraph.registerNodeType("midi/filter", LGMIDIFilter);
+
+    function LGMIDIEvent() {
+        this.properties = {
+            channel: 0,
+            cmd: 144, //0x90
+            value1: 1,
+            value2: 1
+        };
+
+        this.addInput("send", LiteGraph.EVENT);
+        this.addInput("assign", LiteGraph.EVENT);
+        this.addOutput("on_midi", LiteGraph.EVENT);
+
+        this.midi_event = new MIDIEvent();
+        this.gate = false;
+    }
+
+    LGMIDIEvent.title = "MIDIEvent";
+    LGMIDIEvent.desc = "Create a MIDI Event";
+    LGMIDIEvent.color = MIDI_COLOR;
+
+    LGMIDIEvent.prototype.onAction = function(event, midi_event) {
+        if (event == "assign") {
+            this.properties.channel = midi_event.channel;
+            this.properties.cmd = midi_event.cmd;
+            this.properties.value1 = midi_event.data[1];
+            this.properties.value2 = midi_event.data[2];
+            if (midi_event.cmd == MIDIEvent.NOTEON) {
+                this.gate = true;
+            } else if (midi_event.cmd == MIDIEvent.NOTEOFF) {
+                this.gate = false;
+            }
+            return;
+        }
+
+        //send
+        var midi_event = this.midi_event;
+        midi_event.channel = this.properties.channel;
+        if (this.properties.cmd && this.properties.cmd.constructor === String) {
+            midi_event.setCommandFromString(this.properties.cmd);
+        } else {
+            midi_event.cmd = this.properties.cmd;
+        }
+        midi_event.data[0] = midi_event.cmd | midi_event.channel;
+        midi_event.data[1] = Number(this.properties.value1);
+        midi_event.data[2] = Number(this.properties.value2);
+
+        this.trigger("on_midi", midi_event);
+    };
+
+    LGMIDIEvent.prototype.onExecute = function() {
+        var props = this.properties;
+
+        if (this.inputs) {
+            for (var i = 0; i < this.inputs.length; ++i) {
+                var input = this.inputs[i];
+                if (input.link == -1) {
+                    continue;
+                }
+                switch (input.name) {
+                    case "note":
+                        var v = this.getInputData(i);
+                        if (v != null) {
+                            if (v.constructor === String) {
+                                v = MIDIEvent.NoteStringToPitch(v);
+                            }
+                            this.properties.value1 = (v | 0) % 255;
+                        }
+                        break;
+                }
+            }
+        }
+
+        if (this.outputs) {
+            for (var i = 0; i < this.outputs.length; ++i) {
+                var output = this.outputs[i];
+                var v = null;
+                switch (output.name) {
+                    case "midi":
+                        v = new MIDIEvent();
+                        v.setup([props.cmd, props.value1, props.value2]);
+                        v.channel = props.channel;
+                        break;
+                    case "command":
+                        v = props.cmd;
+                        break;
+                    case "cc":
+                        v = props.value1;
+                        break;
+                    case "cc_value":
+                        v = props.value2;
+                        break;
+                    case "note":
+                        v =
+                            props.cmd == MIDIEvent.NOTEON ||
+                            props.cmd == MIDIEvent.NOTEOFF
+                                ? props.value1
+                                : null;
+                        break;
+                    case "velocity":
+                        v = props.cmd == MIDIEvent.NOTEON ? props.value2 : null;
+                        break;
+                    case "pitch":
+                        v =
+                            props.cmd == MIDIEvent.NOTEON
+                                ? MIDIEvent.computePitch(props.value1)
+                                : null;
+                        break;
+                    case "pitchbend":
+                        v =
+                            props.cmd == MIDIEvent.PITCHBEND
+                                ? MIDIEvent.computePitchBend(
+                                      props.value1,
+                                      props.value2
+                                  )
+                                : null;
+                        break;
+                    case "gate":
+                        v = this.gate;
+                        break;
+                    default:
+                        continue;
+                }
+                if (v !== null) {
+                    this.setOutputData(i, v);
+                }
+            }
+        }
+    };
+
+    LGMIDIEvent.prototype.onPropertyChanged = function(name, value) {
+        if (name == "cmd") {
+            this.properties.cmd = MIDIEvent.computeCommandFromString(value);
+        }
+    };
+
+    LGMIDIEvent.prototype.onGetInputs = function() {
+        return [["note", "number"]];
+    };
+
+    LGMIDIEvent.prototype.onGetOutputs = function() {
+        return [
+            ["midi", "midi"],
+            ["on_midi", LiteGraph.EVENT],
+            ["command", "number"],
+            ["note", "number"],
+            ["velocity", "number"],
+            ["cc", "number"],
+            ["cc_value", "number"],
+            ["pitch", "number"],
+            ["gate", "bool"],
+            ["pitchbend", "number"]
+        ];
+    };
+
+    LiteGraph.registerNodeType("midi/event", LGMIDIEvent);
+
+    function LGMIDICC() {
+        this.properties = {
+            //		channel: 0,
+            cc: 1,
+            value: 0
+        };
+
+        this.addOutput("value", "number");
+    }
+
+    LGMIDICC.title = "MIDICC";
+    LGMIDICC.desc = "gets a Controller Change";
+    LGMIDICC.color = MIDI_COLOR;
+
+    LGMIDICC.prototype.onExecute = function() {
+        var props = this.properties;
+        if (MIDIInterface.input) {
+            this.properties.value =
+                MIDIInterface.input.state.cc[this.properties.cc];
+        }
+        this.setOutputData(0, this.properties.value);
+    };
+
+    LiteGraph.registerNodeType("midi/cc", LGMIDICC);
+
+    function LGMIDIGenerator() {
+        this.addInput("generate", LiteGraph.ACTION);
+        this.addInput("scale", "string");
+        this.addInput("octave", "number");
+        this.addOutput("note", LiteGraph.EVENT);
+        this.properties = {
+            notes: "A,A#,B,C,C#,D,D#,E,F,F#,G,G#",
+            octave: 2,
+            duration: 0.5,
+            mode: "sequence"
+        };
+
+        this.notes_pitches = LGMIDIGenerator.processScale(
+            this.properties.notes
+        );
+        this.sequence_index = 0;
+    }
+
+    LGMIDIGenerator.title = "MIDI Generator";
+    LGMIDIGenerator.desc = "Generates a random MIDI note";
+    LGMIDIGenerator.color = MIDI_COLOR;
+
+    LGMIDIGenerator.processScale = function(scale) {
+        var notes = scale.split(",");
+        for (var i = 0; i < notes.length; ++i) {
+            var n = notes[i];
+            if ((n.length == 2 && n[1] != "#") || n.length > 2) {
+                notes[i] = -LiteGraph.MIDIEvent.NoteStringToPitch(n);
+            } else {
+                notes[i] = MIDIEvent.note_to_index[n] || 0;
+            }
+        }
+        return notes;
+    };
+
+    LGMIDIGenerator.prototype.onPropertyChanged = function(name, value) {
+        if (name == "notes") {
+            this.notes_pitches = LGMIDIGenerator.processScale(value);
+        }
+    };
+
+    LGMIDIGenerator.prototype.onExecute = function() {
+        var octave = this.getInputData(2);
+        if (octave != null) {
+            this.properties.octave = octave;
+        }
+
+        var scale = this.getInputData(1);
+        if (scale) {
+            this.notes_pitches = LGMIDIGenerator.processScale(scale);
+        }
+    };
+
+    LGMIDIGenerator.prototype.onAction = function(event, midi_event) {
+        //var range = this.properties.max - this.properties.min;
+        //var pitch = this.properties.min + ((Math.random() * range)|0);
+        var pitch = 0;
+        var range = this.notes_pitches.length;
+        var index = 0;
+
+        if (this.properties.mode == "sequence") {
+            index = this.sequence_index = (this.sequence_index + 1) % range;
+        } else if (this.properties.mode == "random") {
+            index = Math.floor(Math.random() * range);
+        }
+
+        var note = this.notes_pitches[index];
+        if (note >= 0) {
+            pitch = note + (this.properties.octave - 1) * 12 + 33;
+        } else {
+            pitch = -note;
+        }
+
+        var midi_event = new MIDIEvent();
+        midi_event.setup([MIDIEvent.NOTEON, pitch, 10]);
+        var duration = this.properties.duration || 1;
+        this.trigger("note", midi_event);
+
+        //noteoff
+        setTimeout(
+            function() {
+                var midi_event = new MIDIEvent();
+                midi_event.setup([MIDIEvent.NOTEOFF, pitch, 0]);
+                this.trigger("note", midi_event);
+            }.bind(this),
+            duration * 1000
+        );
+    };
+
+    LiteGraph.registerNodeType("midi/generator", LGMIDIGenerator);
+
+    function LGMIDITranspose() {
+        this.properties = {
+            amount: 0
+        };
+        this.addInput("in", LiteGraph.ACTION);
+        this.addInput("amount", "number");
+        this.addOutput("out", LiteGraph.EVENT);
+
+        this.midi_event = new MIDIEvent();
+    }
+
+    LGMIDITranspose.title = "MIDI Transpose";
+    LGMIDITranspose.desc = "Transpose a MIDI note";
+    LGMIDITranspose.color = MIDI_COLOR;
+
+    LGMIDITranspose.prototype.onAction = function(event, midi_event) {
+        if (!midi_event || midi_event.constructor !== MIDIEvent) {
+            return;
+        }
+
+        if (
+            midi_event.data[0] == MIDIEvent.NOTEON ||
+            midi_event.data[0] == MIDIEvent.NOTEOFF
+        ) {
+            this.midi_event = new MIDIEvent();
+            this.midi_event.setup(midi_event.data);
+            this.midi_event.data[1] = Math.round(
+                this.midi_event.data[1] + this.properties.amount
+            );
+            this.trigger("out", this.midi_event);
+        } else {
+            this.trigger("out", midi_event);
+        }
+    };
+
+    LGMIDITranspose.prototype.onExecute = function() {
+        var amount = this.getInputData(1);
+        if (amount != null) {
+            this.properties.amount = amount;
+        }
+    };
+
+    LiteGraph.registerNodeType("midi/transpose", LGMIDITranspose);
+
+    function LGMIDIQuantize() {
+        this.properties = {
+            scale: "A,A#,B,C,C#,D,D#,E,F,F#,G,G#"
+        };
+        this.addInput("note", LiteGraph.ACTION);
+        this.addInput("scale", "string");
+        this.addOutput("out", LiteGraph.EVENT);
+
+        this.valid_notes = new Array(12);
+        this.offset_notes = new Array(12);
+        this.processScale(this.properties.scale);
+    }
+
+    LGMIDIQuantize.title = "MIDI Quantize Pitch";
+    LGMIDIQuantize.desc = "Transpose a MIDI note tp fit an scale";
+    LGMIDIQuantize.color = MIDI_COLOR;
+
+    LGMIDIQuantize.prototype.onPropertyChanged = function(name, value) {
+        if (name == "scale") {
+            this.processScale(value);
+        }
+    };
+
+    LGMIDIQuantize.prototype.processScale = function(scale) {
+        this._current_scale = scale;
+        this.notes_pitches = LGMIDIGenerator.processScale(scale);
+        for (var i = 0; i < 12; ++i) {
+            this.valid_notes[i] = this.notes_pitches.indexOf(i) != -1;
+        }
+        for (var i = 0; i < 12; ++i) {
+            if (this.valid_notes[i]) {
+                this.offset_notes[i] = 0;
+                continue;
+            }
+            for (var j = 1; j < 12; ++j) {
+                if (this.valid_notes[(i - j) % 12]) {
+                    this.offset_notes[i] = -j;
+                    break;
+                }
+                if (this.valid_notes[(i + j) % 12]) {
+                    this.offset_notes[i] = j;
+                    break;
+                }
+            }
+        }
+    };
+
+    LGMIDIQuantize.prototype.onAction = function(event, midi_event) {
+        if (!midi_event || midi_event.constructor !== MIDIEvent) {
+            return;
+        }
+
+        if (
+            midi_event.data[0] == MIDIEvent.NOTEON ||
+            midi_event.data[0] == MIDIEvent.NOTEOFF
+        ) {
+            this.midi_event = new MIDIEvent();
+            this.midi_event.setup(midi_event.data);
+            var note = midi_event.note;
+            var index = MIDIEvent.note_to_index[note];
+            var offset = this.offset_notes[index];
+            this.midi_event.data[1] += offset;
+            this.trigger("out", this.midi_event);
+        } else {
+            this.trigger("out", midi_event);
+        }
+    };
+
+    LGMIDIQuantize.prototype.onExecute = function() {
+        var scale = this.getInputData(1);
+        if (scale != null && scale != this._current_scale) {
+            this.processScale(scale);
+        }
+    };
+
+    LiteGraph.registerNodeType("midi/quantize", LGMIDIQuantize);
+
+    function LGMIDIPlay() {
+        this.properties = {
+            volume: 0.5,
+            duration: 1
+        };
+        this.addInput("note", LiteGraph.ACTION);
+        this.addInput("volume", "number");
+        this.addInput("duration", "number");
+        this.addOutput("note", LiteGraph.EVENT);
+
+        if (typeof AudioSynth == "undefined") {
+            console.error(
+                "Audiosynth.js not included, LGMidiPlay requires that library"
+            );
+            this.boxcolor = "red";
+        } else {
+            var Synth = (this.synth = new AudioSynth());
+            this.instrument = Synth.createInstrument("piano");
+        }
+    }
+
+    LGMIDIPlay.title = "MIDI Play";
+    LGMIDIPlay.desc = "Plays a MIDI note";
+    LGMIDIPlay.color = MIDI_COLOR;
+
+    LGMIDIPlay.prototype.onAction = function(event, midi_event) {
+        if (!midi_event || midi_event.constructor !== MIDIEvent) {
+            return;
+        }
+
+        if (this.instrument && midi_event.data[0] == MIDIEvent.NOTEON) {
+            var note = midi_event.note; //C#
+            if (!note || note == "undefined" || note.constructor !== String) {
+                return;
+            }
+            this.instrument.play(
+                note,
+                midi_event.octave,
+                this.properties.duration,
+                this.properties.volume
+            );
+        }
+        this.trigger("note", midi_event);
+    };
+
+    LGMIDIPlay.prototype.onExecute = function() {
+        var volume = this.getInputData(1);
+        if (volume != null) {
+            this.properties.volume = volume;
+        }
+
+        var duration = this.getInputData(2);
+        if (duration != null) {
+            this.properties.duration = duration;
+        }
+    };
+
+    LiteGraph.registerNodeType("midi/play", LGMIDIPlay);
+
+    function LGMIDIKeys() {
+        this.properties = {
+            num_octaves: 2,
+            start_octave: 2
+        };
+        this.addInput("note", LiteGraph.ACTION);
+        this.addInput("reset", LiteGraph.ACTION);
+        this.addOutput("note", LiteGraph.EVENT);
+        this.size = [400, 100];
+        this.keys = [];
+        this._last_key = -1;
+    }
+
+    LGMIDIKeys.title = "MIDI Keys";
+    LGMIDIKeys.desc = "Keyboard to play notes";
+    LGMIDIKeys.color = MIDI_COLOR;
+
+    LGMIDIKeys.keys = [
+        { x: 0, w: 1, h: 1, t: 0 },
+        { x: 0.75, w: 0.5, h: 0.6, t: 1 },
+        { x: 1, w: 1, h: 1, t: 0 },
+        { x: 1.75, w: 0.5, h: 0.6, t: 1 },
+        { x: 2, w: 1, h: 1, t: 0 },
+        { x: 2.75, w: 0.5, h: 0.6, t: 1 },
+        { x: 3, w: 1, h: 1, t: 0 },
+        { x: 4, w: 1, h: 1, t: 0 },
+        { x: 4.75, w: 0.5, h: 0.6, t: 1 },
+        { x: 5, w: 1, h: 1, t: 0 },
+        { x: 5.75, w: 0.5, h: 0.6, t: 1 },
+        { x: 6, w: 1, h: 1, t: 0 }
+    ];
+
+    LGMIDIKeys.prototype.onDrawForeground = function(ctx) {
+        if (this.flags.collapsed) {
+            return;
+        }
+
+        var num_keys = this.properties.num_octaves * 12;
+        this.keys.length = num_keys;
+        var key_width = this.size[0] / (this.properties.num_octaves * 7);
+        var key_height = this.size[1];
+
+        ctx.globalAlpha = 1;
+
+        for (
+            var k = 0;
+            k < 2;
+            k++ //draw first whites (0) then blacks (1)
+        ) {
+            for (var i = 0; i < num_keys; ++i) {
+                var key_info = LGMIDIKeys.keys[i % 12];
+                if (key_info.t != k) {
+                    continue;
+                }
+                var octave = Math.floor(i / 12);
+                var x = octave * 7 * key_width + key_info.x * key_width;
+                if (k == 0) {
+                    ctx.fillStyle = this.keys[i] ? "#CCC" : "white";
+                } else {
+                    ctx.fillStyle = this.keys[i] ? "#333" : "black";
+                }
+                ctx.fillRect(
+                    x + 1,
+                    0,
+                    key_width * key_info.w - 2,
+                    key_height * key_info.h
+                );
+            }
+        }
+    };
+
+    LGMIDIKeys.prototype.getKeyIndex = function(pos) {
+        var num_keys = this.properties.num_octaves * 12;
+        var key_width = this.size[0] / (this.properties.num_octaves * 7);
+        var key_height = this.size[1];
+
+        for (
+            var k = 1;
+            k >= 0;
+            k-- //test blacks first (1) then whites (0)
+        ) {
+            for (var i = 0; i < this.keys.length; ++i) {
+                var key_info = LGMIDIKeys.keys[i % 12];
+                if (key_info.t != k) {
+                    continue;
+                }
+                var octave = Math.floor(i / 12);
+                var x = octave * 7 * key_width + key_info.x * key_width;
+                var w = key_width * key_info.w;
+                var h = key_height * key_info.h;
+                if (pos[0] < x || pos[0] > x + w || pos[1] > h) {
+                    continue;
+                }
+                return i;
+            }
+        }
+        return -1;
+    };
+
+    LGMIDIKeys.prototype.onAction = function(event, params) {
+        if (event == "reset") {
+            for (var i = 0; i < this.keys.length; ++i) {
+                this.keys[i] = false;
+            }
+            return;
+        }
+
+        if (!params || params.constructor !== MIDIEvent) {
+            return;
+        }
+        var midi_event = params;
+        var start_note = (this.properties.start_octave - 1) * 12 + 29;
+        var index = midi_event.data[1] - start_note;
+        if (index >= 0 && index < this.keys.length) {
+            if (midi_event.data[0] == MIDIEvent.NOTEON) {
+                this.keys[index] = true;
+            } else if (midi_event.data[0] == MIDIEvent.NOTEOFF) {
+                this.keys[index] = false;
+            }
+        }
+
+        this.trigger("note", midi_event);
+    };
+
+    LGMIDIKeys.prototype.onMouseDown = function(e, pos) {
+        if (pos[1] < 0) {
+            return;
+        }
+        var index = this.getKeyIndex(pos);
+        this.keys[index] = true;
+        this._last_key = index;
+        var pitch = (this.properties.start_octave - 1) * 12 + 29 + index;
+        var midi_event = new MIDIEvent();
+        midi_event.setup([MIDIEvent.NOTEON, pitch, 100]);
+        this.trigger("note", midi_event);
+        return true;
+    };
+
+    LGMIDIKeys.prototype.onMouseMove = function(e, pos) {
+        if (pos[1] < 0 || this._last_key == -1) {
+            return;
+        }
+        this.setDirtyCanvas(true);
+        var index = this.getKeyIndex(pos);
+        if (this._last_key == index) {
+            return true;
+        }
+        this.keys[this._last_key] = false;
+        var pitch =
+            (this.properties.start_octave - 1) * 12 + 29 + this._last_key;
+        var midi_event = new MIDIEvent();
+        midi_event.setup([MIDIEvent.NOTEOFF, pitch, 100]);
+        this.trigger("note", midi_event);
+
+        this.keys[index] = true;
+        var pitch = (this.properties.start_octave - 1) * 12 + 29 + index;
+        var midi_event = new MIDIEvent();
+        midi_event.setup([MIDIEvent.NOTEON, pitch, 100]);
+        this.trigger("note", midi_event);
+
+        this._last_key = index;
+        return true;
+    };
+
+    LGMIDIKeys.prototype.onMouseUp = function(e, pos) {
+        if (pos[1] < 0) {
+            return;
+        }
+        var index = this.getKeyIndex(pos);
+        this.keys[index] = false;
+        this._last_key = -1;
+        var pitch = (this.properties.start_octave - 1) * 12 + 29 + index;
+        var midi_event = new MIDIEvent();
+        midi_event.setup([MIDIEvent.NOTEOFF, pitch, 100]);
+        this.trigger("note", midi_event);
+        return true;
+    };
+
+    LiteGraph.registerNodeType("midi/keys", LGMIDIKeys);
+
+    function now() {
+        return window.performance.now();
+    }
+})(this);
+
+(function(global) {
+    var LiteGraph = global.LiteGraph;
+
+    var LGAudio = {};
+    global.LGAudio = LGAudio;
+
+    LGAudio.getAudioContext = function() {
+        if (!this._audio_context) {
+            window.AudioContext =
+                window.AudioContext || window.webkitAudioContext;
+            if (!window.AudioContext) {
+                console.error("AudioContext not supported by browser");
+                return null;
+            }
+            this._audio_context = new AudioContext();
+            this._audio_context.onmessage = function(msg) {
+                console.log("msg", msg);
+            };
+            this._audio_context.onended = function(msg) {
+                console.log("ended", msg);
+            };
+            this._audio_context.oncomplete = function(msg) {
+                console.log("complete", msg);
+            };
+        }
+
+        //in case it crashes
+        //if(this._audio_context.state == "suspended")
+        //	this._audio_context.resume();
+        return this._audio_context;
+    };
+
+    LGAudio.connect = function(audionodeA, audionodeB) {
+        try {
+            audionodeA.connect(audionodeB);
+        } catch (err) {
+            console.warn("LGraphAudio:", err);
+        }
+    };
+
+    LGAudio.disconnect = function(audionodeA, audionodeB) {
+        try {
+            audionodeA.disconnect(audionodeB);
+        } catch (err) {
+            console.warn("LGraphAudio:", err);
+        }
+    };
+
+    LGAudio.changeAllAudiosConnections = function(node, connect) {
+        if (node.inputs) {
+            for (var i = 0; i < node.inputs.length; ++i) {
+                var input = node.inputs[i];
+                var link_info = node.graph.links[input.link];
+                if (!link_info) {
+                    continue;
+                }
+
+                var origin_node = node.graph.getNodeById(link_info.origin_id);
+                var origin_audionode = null;
+                if (origin_node.getAudioNodeInOutputSlot) {
+                    origin_audionode = origin_node.getAudioNodeInOutputSlot(
+                        link_info.origin_slot
+                    );
+                } else {
+                    origin_audionode = origin_node.audionode;
+                }
+
+                var target_audionode = null;
+                if (node.getAudioNodeInInputSlot) {
+                    target_audionode = node.getAudioNodeInInputSlot(i);
+                } else {
+                    target_audionode = node.audionode;
+                }
+
+                if (connect) {
+                    LGAudio.connect(origin_audionode, target_audionode);
+                } else {
+                    LGAudio.disconnect(origin_audionode, target_audionode);
+                }
+            }
+        }
+
+        if (node.outputs) {
+            for (var i = 0; i < node.outputs.length; ++i) {
+                var output = node.outputs[i];
+                for (var j = 0; j < output.links.length; ++j) {
+                    var link_info = node.graph.links[output.links[j]];
+                    if (!link_info) {
+                        continue;
+                    }
+
+                    var origin_audionode = null;
+                    if (node.getAudioNodeInOutputSlot) {
+                        origin_audionode = node.getAudioNodeInOutputSlot(i);
+                    } else {
+                        origin_audionode = node.audionode;
+                    }
+
+                    var target_node = node.graph.getNodeById(
+                        link_info.target_id
+                    );
+                    var target_audionode = null;
+                    if (target_node.getAudioNodeInInputSlot) {
+                        target_audionode = target_node.getAudioNodeInInputSlot(
+                            link_info.target_slot
+                        );
+                    } else {
+                        target_audionode = target_node.audionode;
+                    }
+
+                    if (connect) {
+                        LGAudio.connect(origin_audionode, target_audionode);
+                    } else {
+                        LGAudio.disconnect(origin_audionode, target_audionode);
+                    }
+                }
+            }
+        }
+    };
+
+    //used by many nodes
+    LGAudio.onConnectionsChange = function(
+        connection,
+        slot,
+        connected,
+        link_info
+    ) {
+        //only process the outputs events
+        if (connection != LiteGraph.OUTPUT) {
+            return;
+        }
+
+        var target_node = null;
+        if (link_info) {
+            target_node = this.graph.getNodeById(link_info.target_id);
+        }
+
+        if (!target_node) {
+            return;
+        }
+
+        //get origin audionode
+        var local_audionode = null;
+        if (this.getAudioNodeInOutputSlot) {
+            local_audionode = this.getAudioNodeInOutputSlot(slot);
+        } else {
+            local_audionode = this.audionode;
+        }
+
+        //get target audionode
+        var target_audionode = null;
+        if (target_node.getAudioNodeInInputSlot) {
+            target_audionode = target_node.getAudioNodeInInputSlot(
+                link_info.target_slot
+            );
+        } else {
+            target_audionode = target_node.audionode;
+        }
+
+        //do the connection/disconnection
+        if (connected) {
+            LGAudio.connect(local_audionode, target_audionode);
+        } else {
+            LGAudio.disconnect(local_audionode, target_audionode);
+        }
+    };
+
+    //this function helps creating wrappers to existing classes
+    LGAudio.createAudioNodeWrapper = function(class_object) {
+        var old_func = class_object.prototype.onPropertyChanged;
+
+        class_object.prototype.onPropertyChanged = function(name, value) {
+            if (old_func) {
+                old_func.call(this, name, value);
+            }
+
+            if (!this.audionode) {
+                return;
+            }
+
+            if (this.audionode[name] === undefined) {
+                return;
+            }
+
+            if (this.audionode[name].value !== undefined) {
+                this.audionode[name].value = value;
+            } else {
+                this.audionode[name] = value;
+            }
+        };
+
+        class_object.prototype.onConnectionsChange =
+            LGAudio.onConnectionsChange;
+    };
+
+    //contains the samples decoded of the loaded audios in AudioBuffer format
+    LGAudio.cached_audios = {};
+
+    LGAudio.loadSound = function(url, on_complete, on_error) {
+        if (LGAudio.cached_audios[url] && url.indexOf("blob:") == -1) {
+            if (on_complete) {
+                on_complete(LGAudio.cached_audios[url]);
+            }
+            return;
+        }
+
+        if (LGAudio.onProcessAudioURL) {
+            url = LGAudio.onProcessAudioURL(url);
+        }
+
+        //load new sample
+        var request = new XMLHttpRequest();
+        request.open("GET", url, true);
+        request.responseType = "arraybuffer";
+
+        var context = LGAudio.getAudioContext();
+
+        // Decode asynchronously
+        request.onload = function() {
+            console.log("AudioSource loaded");
+            context.decodeAudioData(
+                request.response,
+                function(buffer) {
+                    console.log("AudioSource decoded");
+                    LGAudio.cached_audios[url] = buffer;
+                    if (on_complete) {
+                        on_complete(buffer);
+                    }
+                },
+                onError
+            );
+        };
+        request.send();
+
+        function onError(err) {
+            console.log("Audio loading sample error:", err);
+            if (on_error) {
+                on_error(err);
+            }
+        }
+
+        return request;
+    };
+
+    //****************************************************
+
+    function LGAudioSource() {
+        this.properties = {
+            src: "",
+            gain: 0.5,
+            loop: true,
+            autoplay: true,
+            playbackRate: 1
+        };
+
+        this._loading_audio = false;
+        this._audiobuffer = null; //points to AudioBuffer with the audio samples decoded
+        this._audionodes = [];
+        this._last_sourcenode = null; //the last AudioBufferSourceNode (there could be more if there are several sounds playing)
+
+        this.addOutput("out", "audio");
+        this.addInput("gain", "number");
+
+        //init context
+        var context = LGAudio.getAudioContext();
+
+        //create gain node to control volume
+        this.audionode = context.createGain();
+        this.audionode.graphnode = this;
+        this.audionode.gain.value = this.properties.gain;
+
+        //debug
+        if (this.properties.src) {
+            this.loadSound(this.properties.src);
+        }
+    }
+
+	LGAudioSource.desc = "Plays an audio file";
+    LGAudioSource["@src"] = { widget: "resource" };
+    LGAudioSource.supported_extensions = ["wav", "ogg", "mp3"];
+
+    LGAudioSource.prototype.onAdded = function(graph) {
+        if (graph.status === LGraph.STATUS_RUNNING) {
+            this.onStart();
+        }
+    };
+
+    LGAudioSource.prototype.onStart = function() {
+        if (!this._audiobuffer) {
+            return;
+        }
+
+        if (this.properties.autoplay) {
+			this.playBuffer(this._audiobuffer);
+        }
+    };
+
+    LGAudioSource.prototype.onStop = function() {
+        this.stopAllSounds();
+    };
+
+    LGAudioSource.prototype.onPause = function() {
+        this.pauseAllSounds();
+    };
+
+    LGAudioSource.prototype.onUnpause = function() {
+        this.unpauseAllSounds();
+        //this.onStart();
+    };
+
+    LGAudioSource.prototype.onRemoved = function() {
+        this.stopAllSounds();
+        if (this._dropped_url) {
+            URL.revokeObjectURL(this._url);
+        }
+    };
+
+    LGAudioSource.prototype.stopAllSounds = function() {
+        //iterate and stop
+        for (var i = 0; i < this._audionodes.length; ++i) {
+            if (this._audionodes[i].started) {
+                this._audionodes[i].started = false;
+                this._audionodes[i].stop();
+            }
+            //this._audionodes[i].disconnect( this.audionode );
+        }
+        this._audionodes.length = 0;
+    };
+
+    LGAudioSource.prototype.pauseAllSounds = function() {
+        LGAudio.getAudioContext().suspend();
+    };
+
+    LGAudioSource.prototype.unpauseAllSounds = function() {
+        LGAudio.getAudioContext().resume();
+    };
+
+    LGAudioSource.prototype.onExecute = function() {
+        if (this.inputs) {
+            for (var i = 0; i < this.inputs.length; ++i) {
+                var input = this.inputs[i];
+                if (input.link == null) {
+                    continue;
+                }
+                var v = this.getInputData(i);
+                if (v === undefined) {
+                    continue;
+                }
+                if (input.name == "gain")
+                    this.audionode.gain.value = v;
+                else if (input.name == "src") {
+                    this.setProperty("src",v);
+                } else if (input.name == "playbackRate") {
+                    this.properties.playbackRate = v;
+                    for (var j = 0; j < this._audionodes.length; ++j) {
+                        this._audionodes[j].playbackRate.value = v;
+                    }
+                }
+            }
+        }
+
+        if (this.outputs) {
+            for (var i = 0; i < this.outputs.length; ++i) {
+                var output = this.outputs[i];
+                if (output.name == "buffer" && this._audiobuffer) {
+                    this.setOutputData(i, this._audiobuffer);
+                }
+            }
+        }
+    };
+
+    LGAudioSource.prototype.onAction = function(event) {
+        if (this._audiobuffer) {
+            if (event == "Play") {
+                this.playBuffer(this._audiobuffer);
+            } else if (event == "Stop") {
+                this.stopAllSounds();
+            }
+        }
+    };
+
+    LGAudioSource.prototype.onPropertyChanged = function(name, value) {
+        if (name == "src") {
+            this.loadSound(value);
+        } else if (name == "gain") {
+            this.audionode.gain.value = value;
+        } else if (name == "playbackRate") {
+            for (var j = 0; j < this._audionodes.length; ++j) {
+                this._audionodes[j].playbackRate.value = value;
+            }
+        }
+    };
+
+    LGAudioSource.prototype.playBuffer = function(buffer) {
+        var that = this;
+        var context = LGAudio.getAudioContext();
+
+        //create a new audionode (this is mandatory, AudioAPI doesnt like to reuse old ones)
+        var audionode = context.createBufferSource(); //create a AudioBufferSourceNode
+        this._last_sourcenode = audionode;
+        audionode.graphnode = this;
+        audionode.buffer = buffer;
+        audionode.loop = this.properties.loop;
+        audionode.playbackRate.value = this.properties.playbackRate;
+        this._audionodes.push(audionode);
+        audionode.connect(this.audionode); //connect to gain
+
+		this._audionodes.push(audionode);
+
+		this.trigger("start");
+
+        audionode.onended = function() {
+            //console.log("ended!");
+            that.trigger("ended");
+            //remove
+            var index = that._audionodes.indexOf(audionode);
+            if (index != -1) {
+                that._audionodes.splice(index, 1);
+            }
+        };
+
+        if (!audionode.started) {
+            audionode.started = true;
+            audionode.start();
+        }
+        return audionode;
+    };
+
+    LGAudioSource.prototype.loadSound = function(url) {
+        var that = this;
+
+        //kill previous load
+        if (this._request) {
+            this._request.abort();
+            this._request = null;
+        }
+
+        this._audiobuffer = null; //points to the audiobuffer once the audio is loaded
+        this._loading_audio = false;
+
+        if (!url) {
+            return;
+        }
+
+        this._request = LGAudio.loadSound(url, inner);
+
+        this._loading_audio = true;
+        this.boxcolor = "#AA4";
+
+        function inner(buffer) {
+            this.boxcolor = LiteGraph.NODE_DEFAULT_BOXCOLOR;
+            that._audiobuffer = buffer;
+            that._loading_audio = false;
+            //if is playing, then play it
+            if (that.graph && that.graph.status === LGraph.STATUS_RUNNING) {
+                that.onStart();
+            } //this controls the autoplay already
+        }
+    };
+
+    //Helps connect/disconnect AudioNodes when new connections are made in the node
+    LGAudioSource.prototype.onConnectionsChange = LGAudio.onConnectionsChange;
+
+    LGAudioSource.prototype.onGetInputs = function() {
+        return [
+            ["playbackRate", "number"],
+			["src","string"],
+            ["Play", LiteGraph.ACTION],
+            ["Stop", LiteGraph.ACTION]
+        ];
+    };
+
+    LGAudioSource.prototype.onGetOutputs = function() {
+        return [["buffer", "audiobuffer"], ["start", LiteGraph.EVENT], ["ended", LiteGraph.EVENT]];
+    };
+
+    LGAudioSource.prototype.onDropFile = function(file) {
+        if (this._dropped_url) {
+            URL.revokeObjectURL(this._dropped_url);
+        }
+        var url = URL.createObjectURL(file);
+        this.properties.src = url;
+        this.loadSound(url);
+        this._dropped_url = url;
+    };
+
+    LGAudioSource.title = "Source";
+    LGAudioSource.desc = "Plays audio";
+    LiteGraph.registerNodeType("audio/source", LGAudioSource);
+
+    //****************************************************
+
+    function LGAudioMediaSource() {
+        this.properties = {
+            gain: 0.5
+        };
+
+        this._audionodes = [];
+        this._media_stream = null;
+
+        this.addOutput("out", "audio");
+        this.addInput("gain", "number");
+
+        //create gain node to control volume
+        var context = LGAudio.getAudioContext();
+        this.audionode = context.createGain();
+        this.audionode.graphnode = this;
+        this.audionode.gain.value = this.properties.gain;
+    }
+
+    LGAudioMediaSource.prototype.onAdded = function(graph) {
+        if (graph.status === LGraph.STATUS_RUNNING) {
+            this.onStart();
+        }
+    };
+
+    LGAudioMediaSource.prototype.onStart = function() {
+        if (this._media_stream == null && !this._waiting_confirmation) {
+            this.openStream();
+        }
+    };
+
+    LGAudioMediaSource.prototype.onStop = function() {
+        this.audionode.gain.value = 0;
+    };
+
+    LGAudioMediaSource.prototype.onPause = function() {
+        this.audionode.gain.value = 0;
+    };
+
+    LGAudioMediaSource.prototype.onUnpause = function() {
+        this.audionode.gain.value = this.properties.gain;
+    };
+
+    LGAudioMediaSource.prototype.onRemoved = function() {
+        this.audionode.gain.value = 0;
+        if (this.audiosource_node) {
+            this.audiosource_node.disconnect(this.audionode);
+            this.audiosource_node = null;
+        }
+        if (this._media_stream) {
+            var tracks = this._media_stream.getTracks();
+            if (tracks.length) {
+                tracks[0].stop();
+            }
+        }
+    };
+
+    LGAudioMediaSource.prototype.openStream = function() {
+        if (!navigator.mediaDevices) {
+            console.log(
+                "getUserMedia() is not supported in your browser, use chrome and enable WebRTC from about://flags"
+            );
+            return;
+        }
+
+        this._waiting_confirmation = true;
+
+        // Not showing vendor prefixes.
+        navigator.mediaDevices
+            .getUserMedia({ audio: true, video: false })
+            .then(this.streamReady.bind(this))
+            .catch(onFailSoHard);
+
+        var that = this;
+        function onFailSoHard(err) {
+            console.log("Media rejected", err);
+            that._media_stream = false;
+            that.boxcolor = "red";
+        }
+    };
+
+    LGAudioMediaSource.prototype.streamReady = function(localMediaStream) {
+        this._media_stream = localMediaStream;
+        //this._waiting_confirmation = false;
+
+        //init context
+        if (this.audiosource_node) {
+            this.audiosource_node.disconnect(this.audionode);
+        }
+        var context = LGAudio.getAudioContext();
+        this.audiosource_node = context.createMediaStreamSource(
+            localMediaStream
+        );
+        this.audiosource_node.graphnode = this;
+        this.audiosource_node.connect(this.audionode);
+        this.boxcolor = "white";
+    };
+
+    LGAudioMediaSource.prototype.onExecute = function() {
+        if (this._media_stream == null && !this._waiting_confirmation) {
+            this.openStream();
+        }
+
+        if (this.inputs) {
+            for (var i = 0; i < this.inputs.length; ++i) {
+                var input = this.inputs[i];
+                if (input.link == null) {
+                    continue;
+                }
+                var v = this.getInputData(i);
+                if (v === undefined) {
+                    continue;
+                }
+                if (input.name == "gain") {
+                    this.audionode.gain.value = this.properties.gain = v;
+                }
+            }
+        }
+    };
+
+    LGAudioMediaSource.prototype.onAction = function(event) {
+        if (event == "Play") {
+            this.audionode.gain.value = this.properties.gain;
+        } else if (event == "Stop") {
+            this.audionode.gain.value = 0;
+        }
+    };
+
+    LGAudioMediaSource.prototype.onPropertyChanged = function(name, value) {
+        if (name == "gain") {
+            this.audionode.gain.value = value;
+        }
+    };
+
+    //Helps connect/disconnect AudioNodes when new connections are made in the node
+    LGAudioMediaSource.prototype.onConnectionsChange =
+        LGAudio.onConnectionsChange;
+
+    LGAudioMediaSource.prototype.onGetInputs = function() {
+        return [
+            ["playbackRate", "number"],
+            ["Play", LiteGraph.ACTION],
+            ["Stop", LiteGraph.ACTION]
+        ];
+    };
+
+    LGAudioMediaSource.title = "MediaSource";
+    LGAudioMediaSource.desc = "Plays microphone";
+    LiteGraph.registerNodeType("audio/media_source", LGAudioMediaSource);
+
+    //*****************************************************
+
+    function LGAudioAnalyser() {
+        this.properties = {
+            fftSize: 2048,
+            minDecibels: -100,
+            maxDecibels: -10,
+            smoothingTimeConstant: 0.5
+        };
+
+        var context = LGAudio.getAudioContext();
+
+        this.audionode = context.createAnalyser();
+        this.audionode.graphnode = this;
+        this.audionode.fftSize = this.properties.fftSize;
+        this.audionode.minDecibels = this.properties.minDecibels;
+        this.audionode.maxDecibels = this.properties.maxDecibels;
+        this.audionode.smoothingTimeConstant = this.properties.smoothingTimeConstant;
+
+        this.addInput("in", "audio");
+        this.addOutput("freqs", "array");
+        this.addOutput("samples", "array");
+
+        this._freq_bin = null;
+        this._time_bin = null;
+    }
+
+    LGAudioAnalyser.prototype.onPropertyChanged = function(name, value) {
+        this.audionode[name] = value;
+    };
+
+    LGAudioAnalyser.prototype.onExecute = function() {
+        if (this.isOutputConnected(0)) {
+            //send FFT
+            var bufferLength = this.audionode.frequencyBinCount;
+            if (!this._freq_bin || this._freq_bin.length != bufferLength) {
+                this._freq_bin = new Uint8Array(bufferLength);
+            }
+            this.audionode.getByteFrequencyData(this._freq_bin);
+            this.setOutputData(0, this._freq_bin);
+        }
+
+        //send analyzer
+        if (this.isOutputConnected(1)) {
+            //send Samples
+            var bufferLength = this.audionode.frequencyBinCount;
+            if (!this._time_bin || this._time_bin.length != bufferLength) {
+                this._time_bin = new Uint8Array(bufferLength);
+            }
+            this.audionode.getByteTimeDomainData(this._time_bin);
+            this.setOutputData(1, this._time_bin);
+        }
+
+        //properties
+        for (var i = 1; i < this.inputs.length; ++i) {
+            var input = this.inputs[i];
+            if (input.link == null) {
+                continue;
+            }
+            var v = this.getInputData(i);
+            if (v !== undefined) {
+                this.audionode[input.name].value = v;
+            }
+        }
+
+        //time domain
+        //this.audionode.getFloatTimeDomainData( dataArray );
+    };
+
+    LGAudioAnalyser.prototype.onGetInputs = function() {
+        return [
+            ["minDecibels", "number"],
+            ["maxDecibels", "number"],
+            ["smoothingTimeConstant", "number"]
+        ];
+    };
+
+    LGAudioAnalyser.prototype.onGetOutputs = function() {
+        return [["freqs", "array"], ["samples", "array"]];
+    };
+
+    LGAudioAnalyser.title = "Analyser";
+    LGAudioAnalyser.desc = "Audio Analyser";
+    LiteGraph.registerNodeType("audio/analyser", LGAudioAnalyser);
+
+    //*****************************************************
+
+    function LGAudioGain() {
+        //default
+        this.properties = {
+            gain: 1
+        };
+
+        this.audionode = LGAudio.getAudioContext().createGain();
+        this.addInput("in", "audio");
+        this.addInput("gain", "number");
+        this.addOutput("out", "audio");
+    }
+
+    LGAudioGain.prototype.onExecute = function() {
+        if (!this.inputs || !this.inputs.length) {
+            return;
+        }
+
+        for (var i = 1; i < this.inputs.length; ++i) {
+            var input = this.inputs[i];
+            var v = this.getInputData(i);
+            if (v !== undefined) {
+                this.audionode[input.name].value = v;
+            }
+        }
+    };
+
+    LGAudio.createAudioNodeWrapper(LGAudioGain);
+
+    LGAudioGain.title = "Gain";
+    LGAudioGain.desc = "Audio gain";
+    LiteGraph.registerNodeType("audio/gain", LGAudioGain);
+
+    function LGAudioConvolver() {
+        //default
+        this.properties = {
+            impulse_src: "",
+            normalize: true
+        };
+
+        this.audionode = LGAudio.getAudioContext().createConvolver();
+        this.addInput("in", "audio");
+        this.addOutput("out", "audio");
+    }
+
+    LGAudio.createAudioNodeWrapper(LGAudioConvolver);
+
+    LGAudioConvolver.prototype.onRemove = function() {
+        if (this._dropped_url) {
+            URL.revokeObjectURL(this._dropped_url);
+        }
+    };
+
+    LGAudioConvolver.prototype.onPropertyChanged = function(name, value) {
+        if (name == "impulse_src") {
+            this.loadImpulse(value);
+        } else if (name == "normalize") {
+            this.audionode.normalize = value;
+        }
+    };
+
+    LGAudioConvolver.prototype.onDropFile = function(file) {
+        if (this._dropped_url) {
+            URL.revokeObjectURL(this._dropped_url);
+        }
+        this._dropped_url = URL.createObjectURL(file);
+        this.properties.impulse_src = this._dropped_url;
+        this.loadImpulse(this._dropped_url);
+    };
+
+    LGAudioConvolver.prototype.loadImpulse = function(url) {
+        var that = this;
+
+        //kill previous load
+        if (this._request) {
+            this._request.abort();
+            this._request = null;
+        }
+
+        this._impulse_buffer = null;
+        this._loading_impulse = false;
+
+        if (!url) {
+            return;
+        }
+
+        //load new sample
+        this._request = LGAudio.loadSound(url, inner);
+        this._loading_impulse = true;
+
+        // Decode asynchronously
+        function inner(buffer) {
+            that._impulse_buffer = buffer;
+            that.audionode.buffer = buffer;
+            console.log("Impulse signal set");
+            that._loading_impulse = false;
+        }
+    };
+
+    LGAudioConvolver.title = "Convolver";
+    LGAudioConvolver.desc = "Convolves the signal (used for reverb)";
+    LiteGraph.registerNodeType("audio/convolver", LGAudioConvolver);
+
+    function LGAudioDynamicsCompressor() {
+        //default
+        this.properties = {
+            threshold: -50,
+            knee: 40,
+            ratio: 12,
+            reduction: -20,
+            attack: 0,
+            release: 0.25
+        };
+
+        this.audionode = LGAudio.getAudioContext().createDynamicsCompressor();
+        this.addInput("in", "audio");
+        this.addOutput("out", "audio");
+    }
+
+    LGAudio.createAudioNodeWrapper(LGAudioDynamicsCompressor);
+
+    LGAudioDynamicsCompressor.prototype.onExecute = function() {
+        if (!this.inputs || !this.inputs.length) {
+            return;
+        }
+        for (var i = 1; i < this.inputs.length; ++i) {
+            var input = this.inputs[i];
+            if (input.link == null) {
+                continue;
+            }
+            var v = this.getInputData(i);
+            if (v !== undefined) {
+                this.audionode[input.name].value = v;
+            }
+        }
+    };
+
+    LGAudioDynamicsCompressor.prototype.onGetInputs = function() {
+        return [
+            ["threshold", "number"],
+            ["knee", "number"],
+            ["ratio", "number"],
+            ["reduction", "number"],
+            ["attack", "number"],
+            ["release", "number"]
+        ];
+    };
+
+    LGAudioDynamicsCompressor.title = "DynamicsCompressor";
+    LGAudioDynamicsCompressor.desc = "Dynamics Compressor";
+    LiteGraph.registerNodeType(
+        "audio/dynamicsCompressor",
+        LGAudioDynamicsCompressor
+    );
+
+    function LGAudioWaveShaper() {
+        //default
+        this.properties = {};
+
+        this.audionode = LGAudio.getAudioContext().createWaveShaper();
+        this.addInput("in", "audio");
+        this.addInput("shape", "waveshape");
+        this.addOutput("out", "audio");
+    }
+
+    LGAudioWaveShaper.prototype.onExecute = function() {
+        if (!this.inputs || !this.inputs.length) {
+            return;
+        }
+        var v = this.getInputData(1);
+        if (v === undefined) {
+            return;
+        }
+        this.audionode.curve = v;
+    };
+
+    LGAudioWaveShaper.prototype.setWaveShape = function(shape) {
+        this.audionode.curve = shape;
+    };
+
+    LGAudio.createAudioNodeWrapper(LGAudioWaveShaper);
+
+    /* disabled till I dont find a way to do a wave shape
+LGAudioWaveShaper.title = "WaveShaper";
+LGAudioWaveShaper.desc = "Distortion using wave shape";
+LiteGraph.registerNodeType("audio/waveShaper", LGAudioWaveShaper);
+*/
+
+    function LGAudioMixer() {
+        //default
+        this.properties = {
+            gain1: 0.5,
+            gain2: 0.5
+        };
+
+        this.audionode = LGAudio.getAudioContext().createGain();
+
+        this.audionode1 = LGAudio.getAudioContext().createGain();
+        this.audionode1.gain.value = this.properties.gain1;
+        this.audionode2 = LGAudio.getAudioContext().createGain();
+        this.audionode2.gain.value = this.properties.gain2;
+
+        this.audionode1.connect(this.audionode);
+        this.audionode2.connect(this.audionode);
+
+        this.addInput("in1", "audio");
+        this.addInput("in1 gain", "number");
+        this.addInput("in2", "audio");
+        this.addInput("in2 gain", "number");
+
+        this.addOutput("out", "audio");
+    }
+
+    LGAudioMixer.prototype.getAudioNodeInInputSlot = function(slot) {
+        if (slot == 0) {
+            return this.audionode1;
+        } else if (slot == 2) {
+            return this.audionode2;
+        }
+    };
+
+    LGAudioMixer.prototype.onPropertyChanged = function(name, value) {
+        if (name == "gain1") {
+            this.audionode1.gain.value = value;
+        } else if (name == "gain2") {
+            this.audionode2.gain.value = value;
+        }
+    };
+
+    LGAudioMixer.prototype.onExecute = function() {
+        if (!this.inputs || !this.inputs.length) {
+            return;
+        }
+
+        for (var i = 1; i < this.inputs.length; ++i) {
+            var input = this.inputs[i];
+
+            if (input.link == null || input.type == "audio") {
+                continue;
+            }
+
+            var v = this.getInputData(i);
+            if (v === undefined) {
+                continue;
+            }
+
+            if (i == 1) {
+                this.audionode1.gain.value = v;
+            } else if (i == 3) {
+                this.audionode2.gain.value = v;
+            }
+        }
+    };
+
+    LGAudio.createAudioNodeWrapper(LGAudioMixer);
+
+    LGAudioMixer.title = "Mixer";
+    LGAudioMixer.desc = "Audio mixer";
+    LiteGraph.registerNodeType("audio/mixer", LGAudioMixer);
+
+    function LGAudioADSR() {
+        //default
+        this.properties = {
+            A: 0.1,
+            D: 0.1,
+            S: 0.1,
+            R: 0.1
+        };
+
+        this.audionode = LGAudio.getAudioContext().createGain();
+        this.audionode.gain.value = 0;
+        this.addInput("in", "audio");
+        this.addInput("gate", "bool");
+        this.addOutput("out", "audio");
+        this.gate = false;
+    }
+
+    LGAudioADSR.prototype.onExecute = function() {
+        var audioContext = LGAudio.getAudioContext();
+        var now = audioContext.currentTime;
+        var node = this.audionode;
+        var gain = node.gain;
+        var current_gate = this.getInputData(1);
+
+        var A = this.getInputOrProperty("A");
+        var D = this.getInputOrProperty("D");
+        var S = this.getInputOrProperty("S");
+        var R = this.getInputOrProperty("R");
+
+        if (!this.gate && current_gate) {
+            gain.cancelScheduledValues(0);
+            gain.setValueAtTime(0, now);
+            gain.linearRampToValueAtTime(1, now + A);
+            gain.linearRampToValueAtTime(S, now + A + D);
+        } else if (this.gate && !current_gate) {
+            gain.cancelScheduledValues(0);
+            gain.setValueAtTime(gain.value, now);
+            gain.linearRampToValueAtTime(0, now + R);
+        }
+
+        this.gate = current_gate;
+    };
+
+    LGAudioADSR.prototype.onGetInputs = function() {
+        return [
+            ["A", "number"],
+            ["D", "number"],
+            ["S", "number"],
+            ["R", "number"]
+        ];
+    };
+
+    LGAudio.createAudioNodeWrapper(LGAudioADSR);
+
+    LGAudioADSR.title = "ADSR";
+    LGAudioADSR.desc = "Audio envelope";
+    LiteGraph.registerNodeType("audio/adsr", LGAudioADSR);
+
+    function LGAudioDelay() {
+        //default
+        this.properties = {
+            delayTime: 0.5
+        };
+
+        this.audionode = LGAudio.getAudioContext().createDelay(10);
+        this.audionode.delayTime.value = this.properties.delayTime;
+        this.addInput("in", "audio");
+        this.addInput("time", "number");
+        this.addOutput("out", "audio");
+    }
+
+    LGAudio.createAudioNodeWrapper(LGAudioDelay);
+
+    LGAudioDelay.prototype.onExecute = function() {
+        var v = this.getInputData(1);
+        if (v !== undefined) {
+            this.audionode.delayTime.value = v;
+        }
+    };
+
+    LGAudioDelay.title = "Delay";
+    LGAudioDelay.desc = "Audio delay";
+    LiteGraph.registerNodeType("audio/delay", LGAudioDelay);
+
+    function LGAudioBiquadFilter() {
+        //default
+        this.properties = {
+            frequency: 350,
+            detune: 0,
+            Q: 1
+        };
+        this.addProperty("type", "lowpass", "enum", {
+            values: [
+                "lowpass",
+                "highpass",
+                "bandpass",
+                "lowshelf",
+                "highshelf",
+                "peaking",
+                "notch",
+                "allpass"
+            ]
+        });
+
+        //create node
+        this.audionode = LGAudio.getAudioContext().createBiquadFilter();
+
+        //slots
+        this.addInput("in", "audio");
+        this.addOutput("out", "audio");
+    }
+
+    LGAudioBiquadFilter.prototype.onExecute = function() {
+        if (!this.inputs || !this.inputs.length) {
+            return;
+        }
+
+        for (var i = 1; i < this.inputs.length; ++i) {
+            var input = this.inputs[i];
+            if (input.link == null) {
+                continue;
+            }
+            var v = this.getInputData(i);
+            if (v !== undefined) {
+                this.audionode[input.name].value = v;
+            }
+        }
+    };
+
+    LGAudioBiquadFilter.prototype.onGetInputs = function() {
+        return [["frequency", "number"], ["detune", "number"], ["Q", "number"]];
+    };
+
+    LGAudio.createAudioNodeWrapper(LGAudioBiquadFilter);
+
+    LGAudioBiquadFilter.title = "BiquadFilter";
+    LGAudioBiquadFilter.desc = "Audio filter";
+    LiteGraph.registerNodeType("audio/biquadfilter", LGAudioBiquadFilter);
+
+    function LGAudioOscillatorNode() {
+        //default
+        this.properties = {
+            frequency: 440,
+            detune: 0,
+            type: "sine"
+        };
+        this.addProperty("type", "sine", "enum", {
+            values: ["sine", "square", "sawtooth", "triangle", "custom"]
+        });
+
+        //create node
+        this.audionode = LGAudio.getAudioContext().createOscillator();
+
+        //slots
+        this.addOutput("out", "audio");
+    }
+
+    LGAudioOscillatorNode.prototype.onStart = function() {
+        if (!this.audionode.started) {
+            this.audionode.started = true;
+            try {
+                this.audionode.start();
+            } catch (err) {}
+        }
+    };
+
+    LGAudioOscillatorNode.prototype.onStop = function() {
+        if (this.audionode.started) {
+            this.audionode.started = false;
+            this.audionode.stop();
+        }
+    };
+
+    LGAudioOscillatorNode.prototype.onPause = function() {
+        this.onStop();
+    };
+
+    LGAudioOscillatorNode.prototype.onUnpause = function() {
+        this.onStart();
+    };
+
+    LGAudioOscillatorNode.prototype.onExecute = function() {
+        if (!this.inputs || !this.inputs.length) {
+            return;
+        }
+
+        for (var i = 0; i < this.inputs.length; ++i) {
+            var input = this.inputs[i];
+            if (input.link == null) {
+                continue;
+            }
+            var v = this.getInputData(i);
+            if (v !== undefined) {
+                this.audionode[input.name].value = v;
+            }
+        }
+    };
+
+    LGAudioOscillatorNode.prototype.onGetInputs = function() {
+        return [
+            ["frequency", "number"],
+            ["detune", "number"],
+            ["type", "string"]
+        ];
+    };
+
+    LGAudio.createAudioNodeWrapper(LGAudioOscillatorNode);
+
+    LGAudioOscillatorNode.title = "Oscillator";
+    LGAudioOscillatorNode.desc = "Oscillator";
+    LiteGraph.registerNodeType("audio/oscillator", LGAudioOscillatorNode);
+
+    //*****************************************************
+
+    //EXTRA
+
+    function LGAudioVisualization() {
+        this.properties = {
+            continuous: true,
+            mark: -1
+        };
+
+        this.addInput("data", "array");
+        this.addInput("mark", "number");
+        this.size = [300, 200];
+        this._last_buffer = null;
+    }
+
+    LGAudioVisualization.prototype.onExecute = function() {
+        this._last_buffer = this.getInputData(0);
+        var v = this.getInputData(1);
+        if (v !== undefined) {
+            this.properties.mark = v;
+        }
+        this.setDirtyCanvas(true, false);
+    };
+
+    LGAudioVisualization.prototype.onDrawForeground = function(ctx) {
+        if (!this._last_buffer) {
+            return;
+        }
+
+        var buffer = this._last_buffer;
+
+        //delta represents how many samples we advance per pixel
+        var delta = buffer.length / this.size[0];
+        var h = this.size[1];
+
+        ctx.fillStyle = "black";
+        ctx.fillRect(0, 0, this.size[0], this.size[1]);
+        ctx.strokeStyle = "white";
+        ctx.beginPath();
+        var x = 0;
+
+        if (this.properties.continuous) {
+            ctx.moveTo(x, h);
+            for (var i = 0; i < buffer.length; i += delta) {
+                ctx.lineTo(x, h - (buffer[i | 0] / 255) * h);
+                x++;
+            }
+        } else {
+            for (var i = 0; i < buffer.length; i += delta) {
+                ctx.moveTo(x + 0.5, h);
+                ctx.lineTo(x + 0.5, h - (buffer[i | 0] / 255) * h);
+                x++;
+            }
+        }
+        ctx.stroke();
+
+        if (this.properties.mark >= 0) {
+            var samplerate = LGAudio.getAudioContext().sampleRate;
+            var binfreq = samplerate / buffer.length;
+            var x = (2 * (this.properties.mark / binfreq)) / delta;
+            if (x >= this.size[0]) {
+                x = this.size[0] - 1;
+            }
+            ctx.strokeStyle = "red";
+            ctx.beginPath();
+            ctx.moveTo(x, h);
+            ctx.lineTo(x, 0);
+            ctx.stroke();
+        }
+    };
+
+    LGAudioVisualization.title = "Visualization";
+    LGAudioVisualization.desc = "Audio Visualization";
+    LiteGraph.registerNodeType("audio/visualization", LGAudioVisualization);
+
+    function LGAudioBandSignal() {
+        //default
+        this.properties = {
+            band: 440,
+            amplitude: 1
+        };
+
+        this.addInput("freqs", "array");
+        this.addOutput("signal", "number");
+    }
+
+    LGAudioBandSignal.prototype.onExecute = function() {
+        this._freqs = this.getInputData(0);
+        if (!this._freqs) {
+            return;
+        }
+
+        var band = this.properties.band;
+        var v = this.getInputData(1);
+        if (v !== undefined) {
+            band = v;
+        }
+
+        var samplerate = LGAudio.getAudioContext().sampleRate;
+        var binfreq = samplerate / this._freqs.length;
+        var index = 2 * (band / binfreq);
+        var v = 0;
+        if (index < 0) {
+            v = this._freqs[0];
+        }
+        if (index >= this._freqs.length) {
+            v = this._freqs[this._freqs.length - 1];
+        } else {
+            var pos = index | 0;
+            var v0 = this._freqs[pos];
+            var v1 = this._freqs[pos + 1];
+            var f = index - pos;
+            v = v0 * (1 - f) + v1 * f;
+        }
+
+        this.setOutputData(0, (v / 255) * this.properties.amplitude);
+    };
+
+    LGAudioBandSignal.prototype.onGetInputs = function() {
+        return [["band", "number"]];
+    };
+
+    LGAudioBandSignal.title = "Signal";
+    LGAudioBandSignal.desc = "extract the signal of some frequency";
+    LiteGraph.registerNodeType("audio/signal", LGAudioBandSignal);
+
+    function LGAudioScript() {
+        if (!LGAudioScript.default_code) {
+            var code = LGAudioScript.default_function.toString();
+            var index = code.indexOf("{") + 1;
+            var index2 = code.lastIndexOf("}");
+            LGAudioScript.default_code = code.substr(index, index2 - index);
+        }
+
+        //default
+        this.properties = {
+            code: LGAudioScript.default_code
+        };
+
+        //create node
+        var ctx = LGAudio.getAudioContext();
+        if (ctx.createScriptProcessor) {
+            this.audionode = ctx.createScriptProcessor(4096, 1, 1);
+        }
+        //buffer size, input channels, output channels
+        else {
+            console.warn("ScriptProcessorNode deprecated");
+            this.audionode = ctx.createGain(); //bypass audio
+        }
+
+        this.processCode();
+        if (!LGAudioScript._bypass_function) {
+            LGAudioScript._bypass_function = this.audionode.onaudioprocess;
+        }
+
+        //slots
+        this.addInput("in", "audio");
+        this.addOutput("out", "audio");
+    }
+
+    LGAudioScript.prototype.onAdded = function(graph) {
+        if (graph.status == LGraph.STATUS_RUNNING) {
+            this.audionode.onaudioprocess = this._callback;
+        }
+    };
+
+    LGAudioScript["@code"] = { widget: "code", type: "code" };
+
+    LGAudioScript.prototype.onStart = function() {
+        this.audionode.onaudioprocess = this._callback;
+    };
+
+    LGAudioScript.prototype.onStop = function() {
+        this.audionode.onaudioprocess = LGAudioScript._bypass_function;
+    };
+
+    LGAudioScript.prototype.onPause = function() {
+        this.audionode.onaudioprocess = LGAudioScript._bypass_function;
+    };
+
+    LGAudioScript.prototype.onUnpause = function() {
+        this.audionode.onaudioprocess = this._callback;
+    };
+
+    LGAudioScript.prototype.onExecute = function() {
+        //nothing! because we need an onExecute to receive onStart... fix that
+    };
+
+    LGAudioScript.prototype.onRemoved = function() {
+        this.audionode.onaudioprocess = LGAudioScript._bypass_function;
+    };
+
+    LGAudioScript.prototype.processCode = function() {
+        try {
+            var func = new Function("properties", this.properties.code);
+            this._script = new func(this.properties);
+            this._old_code = this.properties.code;
+            this._callback = this._script.onaudioprocess;
+        } catch (err) {
+            console.error("Error in onaudioprocess code", err);
+            this._callback = LGAudioScript._bypass_function;
+            this.audionode.onaudioprocess = this._callback;
+        }
+    };
+
+    LGAudioScript.prototype.onPropertyChanged = function(name, value) {
+        if (name == "code") {
+            this.properties.code = value;
+            this.processCode();
+            if (this.graph && this.graph.status == LGraph.STATUS_RUNNING) {
+                this.audionode.onaudioprocess = this._callback;
+            }
+        }
+    };
+
+    LGAudioScript.default_function = function() {
+        this.onaudioprocess = function(audioProcessingEvent) {
+            // The input buffer is the song we loaded earlier
+            var inputBuffer = audioProcessingEvent.inputBuffer;
+
+            // The output buffer contains the samples that will be modified and played
+            var outputBuffer = audioProcessingEvent.outputBuffer;
+
+            // Loop through the output channels (in this case there is only one)
+            for (
+                var channel = 0;
+                channel < outputBuffer.numberOfChannels;
+                channel++
+            ) {
+                var inputData = inputBuffer.getChannelData(channel);
+                var outputData = outputBuffer.getChannelData(channel);
+
+                // Loop through the 4096 samples
+                for (var sample = 0; sample < inputBuffer.length; sample++) {
+                    // make output equal to the same as the input
+                    outputData[sample] = inputData[sample];
+                }
+            }
+        };
+    };
+
+    LGAudio.createAudioNodeWrapper(LGAudioScript);
+
     LGAudioScript.title = "Script";
     LGAudioScript.desc = "apply script to signal";
     LiteGraph.registerNodeType("audio/script", LGAudioScript);
@@ -27216,7 +35842,7 @@ LiteGraph.registerNodeType("audio/waveShaper", LGAudioWaveShaper);
 			var prev_data = this._last_sent_data[i];
             if (data != null) {
                 if (only_send_changes)
-				{	
+				{
 					var is_equal = true;
 					if( data && data.length && prev_data && prev_data.length == data.length && data.constructor !== String)
 					{
@@ -27355,4 +35981,3 @@ LiteGraph.registerNodeType("audio/waveShaper", LGAudioWaveShaper);
 
     LiteGraph.registerNodeType("network/sillyclient", LGSillyClient);
 })(this);
-

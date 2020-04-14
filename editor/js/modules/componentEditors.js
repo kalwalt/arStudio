@@ -1,6 +1,5 @@
 //Inspector Editors for the most common Components plus Materials and Scene.
 //Editors are not included in LiteScene because they do not depend on them
-var TRASH_ICON_CODE = "<img src='imgs/mini-icon-trash.png'/>";
 
 LS.Components.GlobalInfo["@inspector"] = function( component, inspector )
 {
@@ -33,7 +32,7 @@ LS.Components.GlobalInfo["@inspector"] = function( component, inspector )
 
 	function inner_setTexture(channel)
 	{
-		inspector.addTexture(channel, component.textures[channel], { pretitle: AnimationModule.getKeyframeCode( component, "textures/" + channel ), channel: channel, callback: function(filename) { 
+		inspector.addTexture(channel, component.textures[channel], { pretitle: AnimationModule.getKeyframeCode( component, "textures/" + channel ), channel: channel, callback: function(filename) {
 			component.textures[this.options.channel] = filename;
 			if(filename && filename[0] != ":")
 				LS.ResourcesManager.load( filename );
@@ -44,7 +43,7 @@ LS.Components.GlobalInfo["@inspector"] = function( component, inspector )
 	{
 		inspector.widgets_per_row = 2;
 		inspector.addButton( "Render Settings", "Edit", { width: "calc(100% - 30px)", callback: function(){ EditorModule.showRenderSettingsDialog( component.render_settings ); } } );
-		inspector.addButton( null, TRASH_ICON_CODE, { width: "30px", callback: function(){ component.render_settings = null; EditorModule.refreshAttributes(); } } );
+		inspector.addButton( null, InterfaceModule.icons.trash, { width: "30px", callback: function(){ component.render_settings = null; EditorModule.refreshAttributes(); } } );
 		inspector.widgets_per_row = 1;
 	}
 	else
@@ -58,10 +57,10 @@ LS.Components.Transform["@inspector"] = function(transform, inspector)
 		return;
 	var node = transform._root;
 
-	inspector.addVector3("Position", transform._position, { 
+	inspector.addVector3("Position", transform._position, {
 		name_width: 100,
 		pretitle: AnimationModule.getKeyframeCode( transform, "position"),
-		callback: function(r) { 
+		callback: function(r) {
 			if(r.length == 3)
 				transform.setPosition(r[0],r[1],r[2]);
 		},callback_before: function() {
@@ -76,7 +75,7 @@ LS.Components.Transform["@inspector"] = function(transform, inspector)
 	vec3.scale(euler,euler, RAD2DEG );
 	var rot = [euler[2],euler[0],euler[1]];
 
-	inspector.addVector3("Rotation", rot, { 
+	inspector.addVector3("Rotation", rot, {
 		name_width: 100,
 		pretitle: AnimationModule.getKeyframeCode( transform, "rotation"),
 		callback: function(r) {
@@ -116,11 +115,11 @@ LS.Transform.prototype.getExtraTitleCode = function()
 
 LS.Components.Camera["@inspector"] = function(camera, inspector)
 {
-	if(!camera) 
+	if(!camera)
 		return;
 	var node = camera._root;
 
-	inspector.addCombo("Type", camera.type, { values: { "Orthographic" : LS.Camera.ORTHOGRAPHIC, "Perspective": LS.Camera.PERSPECTIVE, "Ortho2D": LS.Camera.ORTHO2D }, pretitle: AnimationModule.getKeyframeCode( camera, "type"), callback: function (value) { 
+	inspector.addCombo("Type", camera.type, { values: { "Orthographic" : LS.Camera.ORTHOGRAPHIC, "Perspective": LS.Camera.PERSPECTIVE, "Ortho2D": LS.Camera.ORTHO2D }, pretitle: AnimationModule.getKeyframeCode( camera, "type"), callback: function (value) {
 		camera.type = value;
 		inspector.refresh();
 	}});
@@ -142,7 +141,7 @@ LS.Components.Camera["@inspector"] = function(camera, inspector)
 	{
 		if(camera.type == LS.Camera.ORTHOGRAPHIC)
 			inspector.addNumber("Frustum size", camera.frustum_size, {  pretitle: AnimationModule.getKeyframeCode( camera, "frustum_size" ),  name_width: 100, callback: function (value) { camera.frustum_size = value; }});
-		inspector.addNumber("focalLength", camera.focalLength, { min: 0.0001, pretitle: AnimationModule.getKeyframeCode( camera, "focalLength" ),  name_width: 100, callback: function(v) { 
+		inspector.addNumber("focalLength", camera.focalLength, { min: 0.0001, pretitle: AnimationModule.getKeyframeCode( camera, "focalLength" ),  name_width: 100, callback: function(v) {
 			camera.focalLength = v;
 		}});
 	}
@@ -150,7 +149,7 @@ LS.Components.Camera["@inspector"] = function(camera, inspector)
 	var is_node_camera = (node && !node._is_root);
 
 	inspector.addSeparator();
-	inspector.addLayers("Layers", camera.layers, { pretitle: AnimationModule.getKeyframeCode( camera, "layers"), callback: function (value) { 
+	inspector.addLayers("Layers", camera.layers, { pretitle: AnimationModule.getKeyframeCode( camera, "layers"), callback: function (value) {
 		camera.layers = value;
 		inspector.refresh();
 	}});
@@ -158,18 +157,18 @@ LS.Components.Camera["@inspector"] = function(camera, inspector)
 	if(!is_node_camera)
 	{
 		inspector.addSeparator();
-		inspector.addVector3("Eye", camera.eye, { name_width: 80, pretitle: AnimationModule.getKeyframeCode( camera, "eye" ), disabled: is_node_camera, callback: function(v) { 
+		inspector.addVector3("Eye", camera.eye, { name_width: 80, pretitle: AnimationModule.getKeyframeCode( camera, "eye" ), disabled: is_node_camera, callback: function(v) {
 			camera.eye = v;
 		}});
-		inspector.addVector3("Center", camera.center, { name_width: 80, pretitle: AnimationModule.getKeyframeCode( camera, "center" ), disabled: is_node_camera, callback: function(v) { 
+		inspector.addVector3("Center", camera.center, { name_width: 80, pretitle: AnimationModule.getKeyframeCode( camera, "center" ), disabled: is_node_camera, callback: function(v) {
 			camera.center = v;
 		}});
-		inspector.addVector3("Up", camera.up, { name_width: 80, pretitle: AnimationModule.getKeyframeCode( camera, "up" ), disabled: is_node_camera, callback: function(v) { 
+		inspector.addVector3("Up", camera.up, { name_width: 80, pretitle: AnimationModule.getKeyframeCode( camera, "up" ), disabled: is_node_camera, callback: function(v) {
 			camera.up = vec3.normalize(vec3.create(), v);
 		}});
 	}
 
-	inspector.addButtons(null,["Copy from current","View from here"],{ callback: function(v){ 
+	inspector.addButtons(null,["Copy from current","View from here"],{ callback: function(v){
 		if(v == "Copy from current")
 			inner_copy_from_current();
 		else
@@ -177,15 +176,15 @@ LS.Components.Camera["@inspector"] = function(camera, inspector)
 	}});
 
 	inspector.addTitle("Viewport");
-	inspector.addVector2("Offset", camera._viewport.subarray(0,2), { pretitle: AnimationModule.getKeyframeCode( camera, "viewport_offset" ),  name_width: 100,min:0, max:1, step: 0.001, callback: function(v) { 
+	inspector.addVector2("Offset", camera._viewport.subarray(0,2), { pretitle: AnimationModule.getKeyframeCode( camera, "viewport_offset" ),  name_width: 100,min:0, max:1, step: 0.001, callback: function(v) {
 		camera._viewport.subarray(0,2).set(v);
 	}});
-	inspector.addVector2("Size", camera._viewport.subarray(2,4), { pretitle: AnimationModule.getKeyframeCode( camera, "viewport_size" ), name_width: 100, min:0, max:1, step: 0.001, callback: function(v) { 
+	inspector.addVector2("Size", camera._viewport.subarray(2,4), { pretitle: AnimationModule.getKeyframeCode( camera, "viewport_size" ), name_width: 100, min:0, max:1, step: 0.001, callback: function(v) {
 		camera._viewport.subarray(2,4).set(v);
 	}});
 
-	inspector.addColor("Background Color", camera.background_color , { pretitle: AnimationModule.getKeyframeCode( camera, "background_color" ), callback: function (v) { 
-		camera.background_color = v; 
+	inspector.addColor("Background Color", camera.background_color , { pretitle: AnimationModule.getKeyframeCode( camera, "background_color" ), callback: function (v) {
+		camera.background_color = v;
 		if(RenderModule.cameras)
 			for(var i in RenderModule.cameras)
 				RenderModule.cameras[i].background_color = v;
@@ -228,8 +227,8 @@ LS.Components.Light["@inspector"] = function(light, inspector)
 	var node = light._root;
 
 	var light_types = ["Omni","Spot","Directional"];
-	inspector.addCombo("Type", light_types[light.type-1], { pretitle: AnimationModule.getKeyframeCode( light, "type"), values: light_types, callback: function(v) { 
-		light.type = light_types.indexOf(v)+1; 
+	inspector.addCombo("Type", light_types[light.type-1], { pretitle: AnimationModule.getKeyframeCode( light, "type"), values: light_types, callback: function(v) {
+		light.type = light_types.indexOf(v)+1;
 	}});
 
 	inspector.addColor("Color", light.color, { pretitle: AnimationModule.getKeyframeCode( light, "color"), callback: function(color) { light.color = color; } });
@@ -240,7 +239,7 @@ LS.Components.Light["@inspector"] = function(light, inspector)
 	inspector.addCheckbox("Spot cone", light.spot_cone != false, { pretitle: AnimationModule.getKeyframeCode( light, "spot_cone"), callback: function(v) { light.spot_cone = v; }});
 	inspector.widgets_per_row = 1;
 	inspector.addNumber("Frustum size", light.frustum_size || 100, { pretitle: AnimationModule.getKeyframeCode( light, "frustum_size"), callback: function (value) { light.frustum_size = value; }});
-	inspector.addLayers("Illuminated Layers", light.illuminated_layers, { pretitle: AnimationModule.getKeyframeCode( light, "illuminated_layers"), callback: function (value) { 
+	inspector.addLayers("Illuminated Layers", light.illuminated_layers, { pretitle: AnimationModule.getKeyframeCode( light, "illuminated_layers"), callback: function (value) {
 		light.illuminated_layers = value;
 		inspector.refresh();
 	}});
@@ -251,12 +250,12 @@ LS.Components.Light["@inspector"] = function(light, inspector)
 	{
 		inspector.addSeparator();
 
-		inspector.addVector3("Position", light.position, { pretitle: AnimationModule.getKeyframeCode( light, "position"), name_width: 100,  disabled: !is_root_camera, callback: function(v) { 
-			light.position = v; 
+		inspector.addVector3("Position", light.position, { pretitle: AnimationModule.getKeyframeCode( light, "position"), name_width: 100,  disabled: !is_root_camera, callback: function(v) {
+			light.position = v;
 		}});
 
-		inspector.addVector3("Target", light.target, { pretitle: AnimationModule.getKeyframeCode( light, "target"), name_width: 100, disabled: !is_root_camera, callback: function(v) { 
-			light.target = v; 
+		inspector.addVector3("Target", light.target, { pretitle: AnimationModule.getKeyframeCode( light, "target"), name_width: 100, disabled: !is_root_camera, callback: function(v) {
+			light.target = v;
 		}});
 	}
 
@@ -280,7 +279,7 @@ LS.Components.Light["@inspector"] = function(light, inspector)
 		inspector.widgets_per_row = 2;
 		//inspector.addCheckbox("Reverse faces", light.hard_shadows, { pretitle: AnimationModule.getKeyframeCode( light, "hard_shadows"), callback: function(v) { light.hard_shadows = v; }});
 		inspector.addCheckbox("Hard shadows", light.hard_shadows, { pretitle: AnimationModule.getKeyframeCode( light, "hard_shadows"), callback: function(v) { light.hard_shadows = v; }});
-		inspector.addLayers("Shadows Layers", light.shadows_layers, { pretitle: AnimationModule.getKeyframeCode( light, "shadows_layers"), callback: function (value) { 
+		inspector.addLayers("Shadows Layers", light.shadows_layers, { pretitle: AnimationModule.getKeyframeCode( light, "shadows_layers"), callback: function (value) {
 			light.shadows_layers = value;
 			inspector.refresh();
 		}});
@@ -289,26 +288,26 @@ LS.Components.Light["@inspector"] = function(light, inspector)
 		inspector.addNumber("Far", light.far, { pretitle: AnimationModule.getKeyframeCode( light, "far"), callback: function (value) { light.far = value; }});
 		inspector.widgets_per_row = 1;
 		inspector.addNumber("Shadow bias", light.shadow_bias, { pretitle: AnimationModule.getKeyframeCode( light, "shadow_bias"), step: 0.001, precision: 3, min:-0.5, callback: function (value) { light.shadow_bias = value; }});
-		inspector.addCombo("Shadowmap size", !light.shadowmap_resolution ? "Default" : light.shadowmap_resolution, { pretitle: AnimationModule.getKeyframeCode( light, "shadowmap_resolution"), values: ["Default",256,512,1024,2048,4096], callback: function(v) { 
+		inspector.addCombo("Shadowmap size", !light.shadowmap_resolution ? "Default" : light.shadowmap_resolution, { pretitle: AnimationModule.getKeyframeCode( light, "shadowmap_resolution"), values: ["Default",256,512,1024,2048,4096], callback: function(v) {
 			if(v == "Default")
-				light.shadowmap_resolution = 0; 
+				light.shadowmap_resolution = 0;
 			else
-				light.shadowmap_resolution = parseFloat(v); 
+				light.shadowmap_resolution = parseFloat(v);
 		}});
 	}
 
 	inspector.addTitle("Textures");
-	inspector.addTexture("Proj. texture", light.projective_texture, { pretitle: AnimationModule.getKeyframeCode( light, "projective_texture"), callback: function(filename) { 
+	inspector.addTexture("Proj. texture", light.projective_texture, { pretitle: AnimationModule.getKeyframeCode( light, "projective_texture"), callback: function(filename) {
 		light.projective_texture = filename;
 		LS.GlobalScene.refresh();
 	}});
 
-	inspector.addTexture("Extra texture", light.extra_texture, { pretitle: AnimationModule.getKeyframeCode( light, "extra_texture"), callback: function(filename) { 
+	inspector.addTexture("Extra texture", light.extra_texture, { pretitle: AnimationModule.getKeyframeCode( light, "extra_texture"), callback: function(filename) {
 		light.extra_texture = filename;
 		LS.GlobalScene.refresh();
 	}});
 
-	inspector.addButton(null, "Edit Shader", { callback: function() { 
+	inspector.addButton(null, "Edit Shader", { callback: function() {
 		CodingModule.openTab();
 		CodingModule.editInstanceCode( light, { id: light.uid, title: "Light Shader", lang:"glsl", help: light.constructor.coding_help, getCode: function(){ return light.extra_light_shader_code; }, setCode: function(code){ light.extra_light_shader_code = code; } } );
 	}});
@@ -351,14 +350,14 @@ LS.Components.MeshRenderer.onShowProperties = function( component, inspector )
 			if(mesh && mesh.info && mesh.info.groups && mesh.info.groups[i])
 				title = i + ": " + mesh.info.groups[i].name;
 			inspector.addStringButton( title, component.submaterials[i] || "", { index: i, callback: function() {
-			
+
 			}, callback_button: function(v){
 				//component.submaterials[ this.options.index ] = null;
 				//inspector.refresh();
 			}});
 		}
 
-	inspector.addButton(null,"Add submaterial", { callback: function() { 
+	inspector.addButton(null,"Add submaterial", { callback: function() {
 		var submaterial = null;
 		var i = component.submaterials.length;
 		if(mesh && mesh.info && mesh.info.groups)
@@ -388,7 +387,7 @@ EditorModule.onShowComponentCustomProperties = function( component, inspector, i
 
 	var valid_properties = ["number","vec2","vec3","vec4","color","enum","texture","cubemap","node","string","sampler"];
 
-	inspector.addButton(null,"Edit Properties", { callback: function() { 
+	inspector.addButton(null,"Edit Properties", { callback: function() {
 		EditorModule.showEditPropertiesDialog( component.properties, valid_properties, inner_on_editproperties );
 	}});
 
@@ -415,7 +414,7 @@ EditorModule.onShowComponentCustomProperties = function( component, inspector, i
 		//component.updateProperty( p );
 		//TODO
 		inspector.refresh();
-	}	
+	}
 
 	function inner_on_property_value_change(v)
 	{
@@ -479,7 +478,7 @@ LS.FXStack.prototype.inspect = function( inspector, component )
 	var that = this;
 
 	var title = inspector.addTitle("Active FX");
-	title.addEventListener("contextmenu", function(e) { 
+	title.addEventListener("contextmenu", function(e) {
         if(e.button != 2) //right button
             return false;
 		//create the context menu
@@ -495,7 +494,7 @@ LS.FXStack.prototype.inspect = function( inspector, component )
 			}
 			LS.GlobalScene.refresh();
 		}});
-        e.preventDefault(); 
+        e.preventDefault();
         return false;
     });
 
@@ -524,7 +523,7 @@ LS.FXStack.prototype.inspect = function( inspector, component )
 						fx: fx,
 						callback: function(v){
 							this.options.fx[ this.options.fx_name ] = v;
-						}				
+						}
 					});
 				else if(uniform.type == "color3")
 					inspector.addColor( j, fx[j] !== undefined ? fx[j] : uniform.value, {
@@ -533,7 +532,7 @@ LS.FXStack.prototype.inspect = function( inspector, component )
 						fx: fx,
 						callback: function(v){
 							this.options.fx[ this.options.fx_name ] = v;
-						}				
+						}
 					});
 				else if(uniform.type == "sampler2D")
 					inspector.addTexture( j, fx[j] !== undefined ? fx[j] : uniform.value, {
@@ -542,7 +541,7 @@ LS.FXStack.prototype.inspect = function( inspector, component )
 						fx: fx,
 						callback: function(v){
 							this.options.fx[ this.options.fx_name ] = v;
-						}				
+						}
 					});
 				else //for vec2, vec3, vec4
 					inspector.add( uniform.type, j, fx[j] !== undefined ? fx[j] : uniform.value, {
@@ -554,7 +553,7 @@ LS.FXStack.prototype.inspect = function( inspector, component )
 								this.options.fx[ this.options.fx_name ].set( v );
 							else
 								this.options.fx[ this.options.fx_name ] = v;
-						}				
+						}
 					});
 			}
 	}
@@ -586,7 +585,7 @@ LS.FXStack.prototype.inspect = function( inspector, component )
 		var available_fx = [];
 		for(var i in fx)
 			available_fx.push(i);
-		available_fx = available_fx.sort();		
+		available_fx = available_fx.sort();
 		var selected_available_fx = "";
 		var available_list = widgets_left.addList( null, available_fx, { height: 240, callback: function(v) {
 			selected_available_fx = v;
@@ -636,24 +635,11 @@ function computeSharedInitialString(array)
 	return first.length;
 }
 
-function removeSharedString(array)
-{
-	var n = computeSharedInitialString(array);
-	array = array.map(function(a){ 
-		a = a.substr(n);
-		var last = a.lastIndexOf(".");
-		if(last != -1)
-			return a.substr(0,last);
-		return a;
-	});
-	return array;
-}
-
 LS.Components.MorphDeformer["@inspector"] = function(component, inspector)
 {
 	inspector.widgets_per_row = 2;
-	inspector.addCombo("mode",component.mode, { name_width: 100, values: LS.Components.MorphDeformer["@mode"].values, width:"60%", callback: function (value) { 
-		component.mode = value; 
+	inspector.addCombo("mode",component.mode, { name_width: 100, values: LS.Components.MorphDeformer["@mode"].values, width:"60%", callback: function (value) {
+		component.mode = value;
 	}});
 	inspector.addCheckbox("delta_meshes", component.delta_meshes, { name_width: 120, width:"40%", callback: function(v){ component.delta_meshes = v; }});
 	inspector.widgets_per_row = 1;
@@ -663,17 +649,18 @@ LS.Components.MorphDeformer["@inspector"] = function(component, inspector)
 		if(LS.Components.MorphDeformer.use_sliders)
 		{
 			var names = component.morph_targets.map(function(a){return a.mesh;});
-			names = removeSharedString(names);
+			names = LS.Components.MorphDeformer.removeSharedString(names);
 			inspector.widgets_per_row = 2;
 			for(var i = 0; i < component.morph_targets.length; i++)
 			{
+				var pretty_name = names[i].replace(/_/g," ");
 				var morph = component.morph_targets[i];
-				inspector.addSlider(names[i].replace(/_/g," "), morph.weight, { min: -1, max: 1, width: "calc(100% - 40px)", pretitle: AnimationModule.getKeyframeCode( component, "morphs/"+i+"/weight" ), morph_index: i, callback: function(v) { 
+				inspector.addSlider(pretty_name, morph.weight, { min: -1, max: 1, width: "calc(100% - 40px)", pretitle: AnimationModule.getKeyframeCode( component, "morphs/"+i+"/weight" ), morph_index: i, callback: function(v) {
 					component.setMorphWeight( this.options.morph_index, v );
 					LS.GlobalScene.refresh();
 				}});
 
-				inspector.addButton(null, "0", { width: "40px", morph_index: i, callback: function() { 
+				inspector.addButton(null, "0", { width: "40px", morph_index: i, callback: function() {
 					component.setMorphWeight( this.options.morph_index, 0 );
 					inspector.refresh();
 					LS.GlobalScene.refresh();
@@ -687,17 +674,17 @@ LS.Components.MorphDeformer["@inspector"] = function(component, inspector)
 			for(var i = 0; i < component.morph_targets.length; i++)
 			{
 				var morph = component.morph_targets[i];
-				inspector.addMesh("", morph.mesh, { pretitle: AnimationModule.getKeyframeCode( component, "morphs/"+i+"/mesh" ), name_width: 20, align: "right", width: "60%", morph_index: i, callback: function(v) { 
+				inspector.addMesh("", morph.mesh, { pretitle: AnimationModule.getKeyframeCode( component, "morphs/"+i+"/mesh" ), name_width: 20, align: "right", width: "60%", morph_index: i, callback: function(v) {
 					component.setMorphMesh( this.options.morph_index, v );
 					LS.GlobalScene.refresh();
 				}});
 
-				inspector.addNumber("", morph.weight, { pretitle: AnimationModule.getKeyframeCode( component, "morphs/"+i+"/weight" ), name_width: 20, width: "25%", step: 0.01, morph_index: i, callback: function(v) { 
+				inspector.addNumber("", morph.weight, { pretitle: AnimationModule.getKeyframeCode( component, "morphs/"+i+"/weight" ), name_width: 20, width: "25%", step: 0.01, morph_index: i, callback: function(v) {
 					component.setMorphWeight( this.options.morph_index, v );
 					LS.GlobalScene.refresh();
 				}});
 
-				inspector.addButton(null, TRASH_ICON_CODE, { width: "15%", morph_index: i, callback: function() { 
+				inspector.addButton(null, InterfaceModule.icons.trash, { width: "15%", morph_index: i, callback: function() {
 					component.morph_targets.splice( this.options.morph_index, 1);
 					inspector.refresh();
 					LS.GlobalScene.refresh();
@@ -708,11 +695,11 @@ LS.Components.MorphDeformer["@inspector"] = function(component, inspector)
 	}
 
 	inspector.widgets_per_row = 3;
-	inspector.addButton(null,"Add Morph Target", { width: "55%", callback: function() { 
+	inspector.addButton(null,"Add Morph Target", { width: "55%", callback: function() {
 		component.morph_targets.push({ mesh:"", weight: 0.0 });
 		inspector.refresh();
 	}});
-	inspector.addButton(null,"Zero", { width: "15%", callback: function() { 
+	inspector.addButton(null,"Zero", { width: "15%", callback: function() {
 		component.clearWeights();
 		inspector.refresh();
 	}});
@@ -724,7 +711,7 @@ LS.Components.MorphDeformer["@inspector"] = function(component, inspector)
 if(LS.Components.SkinDeformer)
 LS.Components.SkinDeformer.onShowProperties = function( component, inspector )
 {
-	inspector.addButton("","See bones", { callback: function() { 
+	inspector.addButton("","See bones", { callback: function() {
 		EditorModule.showBonesDialog( component.getMesh() ); //right below this function
 	}});
 }
@@ -794,12 +781,12 @@ LS.Components.ParticleEmissor["@inspector"] = function(component, inspector)
 	inspector.addCheckbox("Point particles", component.point_particles,  {callback: function (value) { component.point_particles = value; }});
 
 	inspector.addTitle("Emisor");
-	inspector.addCombo("Type",component.emissor_type, { values: LS.Components.ParticleEmissor["@emissor_type"].values, callback: function (value) { 
-		component.emissor_type = value; 
+	inspector.addCombo("Type",component.emissor_type, { values: LS.Components.ParticleEmissor["@emissor_type"].values, callback: function (value) {
+		component.emissor_type = value;
 	}});
 	inspector.addNumber("Rate",component.emissor_rate, {step:0.1,min:0,max:100, callback: function (value) { component.emissor_rate = value; }});
 	inspector.addVector3("Size",component.emissor_size, {step:0.1,min:0, callback: function (value) { component.emissor_size = value; }});
-	inspector.addMesh("Mesh", component.emissor_mesh, { callback: function(filename) { 
+	inspector.addMesh("Mesh", component.emissor_mesh, { callback: function(filename) {
 		component.emissor_mesh = filename;
 		if(filename)
 			LS.ResourcesManager.load(filename);
@@ -819,7 +806,7 @@ LS.Components.ParticleEmissor["@inspector"] = function(component, inspector)
 	inspector.addSlider("Opacity",component.opacity, {step:0.001,min:0,max:1, callback: function (value) { component.opacity = value; }});
 	inspector.addLine("Opacity Curve",component.particle_opacity_curve, {defaulty:0, width: 120, callback: function (value) { component.particle_opacity_curve = value; }});
 	inspector.addNumber("Grid Texture",component.texture_grid_size, {step:1,min:1,max:5,precision:0, callback: function (value) { component.texture_grid_size = value; }});
-	inspector.addTexture("Texture", component.texture, { callback: function(filename) { 
+	inspector.addTexture("Texture", component.texture, { callback: function(filename) {
 		component.texture = filename;
 		if(filename)
 			LS.ResourcesManager.load(filename);
@@ -881,7 +868,7 @@ if(LS.Components.SpriteAtlas)
 LS.Components.SpriteAtlas["@inspector"] = function( component, inspector )
 {
 	inspector.addTexture("texture", component.texture, { callback: function(v){
-		component.texture = v;		
+		component.texture = v;
 	}});
 
 	inspector.addButton("Areas","Edit Areas", function() {
@@ -894,7 +881,7 @@ LS.Components.SceneInclude["@inspector"] = function( component, inspector )
 {
 	inspector.widgets_per_row = 2;
 	inspector.addResource("scene_path", component.scene_path || "", { width: "75%", pretitle: AnimationModule.getKeyframeCode( component, "scene_path" ), callback: function(v) { component.scene_path = v; } });
-	inspector.addButton(null,"Open", { width: "25%", callback: function() { 
+	inspector.addButton(null,"Open", { width: "25%", callback: function() {
 		if(component.scene_path && component._scene)
 			CORE.selectScene( component._scene, true );
 	}});
@@ -926,7 +913,7 @@ LS.Components.SceneInclude["@inspector"] = function( component, inspector )
 	}
 
 	inspector.addTitle("Scene Custom Data");
-	EditorModule.onShowComponentCustomProperties( component._scene.root.custom, inspector, true, component, "custom/" ); 
+	EditorModule.onShowComponentCustomProperties( component._scene.root.custom, inspector, true, component, "custom/" );
 }
 
 if(LS.Components.Poser)
@@ -944,12 +931,12 @@ LS.Components.Poser["@inspector"] = function( component, inspector)
 	for(var i in component.poses )
 	{
 		var pose = component.poses[i];
-		inspector.addSlider(pose.name, pose.weight, { min: 0, max: 1, width: "calc(100% - 40px)", pretitle: AnimationModule.getKeyframeCode( component, "pose/"+i+"/weight" ), pose_name: pose.name, callback: function(v) { 
+		inspector.addSlider(pose.name, pose.weight, { min: 0, max: 1, width: "calc(100% - 40px)", pretitle: AnimationModule.getKeyframeCode( component, "pose/"+i+"/weight" ), pose_name: pose.name, callback: function(v) {
 			component.setPoseWeight( this.options.pose_name, v );
 			LS.GlobalScene.refresh();
 		}});
 
-		inspector.addButton(null, "0", { width: "40px", pose_name: pose.name, callback: function() { 
+		inspector.addButton(null, "0", { width: "40px", pose_name: pose.name, callback: function() {
 			component.setPoseWeight( this.options.pose_name, 0 );
 			inspector.refresh();
 			LS.GlobalScene.refresh();
@@ -998,7 +985,7 @@ LS.Components.Poser.showPoseNodesDialog = function( component, event )
 
 		if(!component._selected)
 			component._selected = poses[0];
-		
+
 		widgets_left.addCombo("Pose", component._selected ,{values: poses, callback: function(v){
 			component._selected = v;
 		}});
@@ -1027,7 +1014,7 @@ LS.Components.Poser.showPoseNodesDialog = function( component, event )
 
 		var new_pose_name = "";
 
-		widgets_left.addStringButton( "New Pose", new_pose_name, { button:"+", callback: function(v) { 
+		widgets_left.addStringButton( "New Pose", new_pose_name, { button:"+", callback: function(v) {
 			new_pose_name = v;
 		}, callback_button: function(){
 			if(!new_pose_name)
@@ -1126,7 +1113,7 @@ if(LS.Components.ReflectionProbe)
 		inspector.widgets_per_row = 3;
 		inspector.addButton( null, "Update", { width: "40%", callback: function(){ component.recompute(null,true); LS.GlobalScene.requestFrame(); }});
 		inspector.addButton( null, "Update all", { width: "50%", callback: function(){ LS.Components.ReflectionProbe.updateAll(); LS.GlobalScene.requestFrame(); }});
-		inspector.addButton( null, LiteGUI.special_codes.download, { width: "10%", callback: function(){ 
+		inspector.addButton( null, LiteGUI.special_codes.download, { width: "10%", callback: function(){
 			var texture = component.texture;
 			if(!texture)
 				return;
@@ -1150,12 +1137,12 @@ LS.Components.IrradianceCache.onShowProperties = function( component, inspector 
 	var info = null;
 
 	inspector.widgets_per_row = 2;
-	inspector.addButton( null, "update all", { width:"70%", callback: function(){ 
+	inspector.addButton( null, "update all", { width:"70%", callback: function(){
 		component.recompute(); LS.GlobalScene.requestFrame();
 		info.setValue( (component.getSizeInBytes()/1024).toFixed(1) + " KBs" );
 		info_num.setValue( component._irradiance_shs.length );
 	}});
-	inspector.addButton( null, "[only view]", { width:"30%", callback: function(){ 
+	inspector.addButton( null, "[only view]", { width:"30%", callback: function(){
 		component.recompute( LS.Renderer._current_camera ); LS.GlobalScene.requestFrame();
 		info.setValue( (component.getSizeInBytes()/1024).toFixed(1) + " KBs" );
 		info_num.setValue( component._irradiance_shs.length );

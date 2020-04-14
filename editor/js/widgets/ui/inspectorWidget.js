@@ -34,11 +34,11 @@ InspectorWidget.prototype.init = function( options )
 	this.header.querySelector(".refresh").addEventListener("click", this.onRefresh.bind(this) );
 	this.header.querySelector(".lock").addEventListener("click", this.onLock.bind(this) );
 
-	this.header.addEventListener("contextmenu", (function(e) { 
+	this.header.addEventListener("contextmenu", (function(e) {
 		if(e.button != 2) //right button
 			return false;
 		EditorModule.showInstanceContextMenu( that.instance , e );
-		e.preventDefault(); 
+		e.preventDefault();
 		return false;
 	}).bind(this));
 
@@ -50,7 +50,7 @@ InspectorWidget.prototype.init = function( options )
 		RenderModule.requestFrame();
 	}
 	this.inspector.addInfo(null,"select something to see its attributes");
-	
+
 	this.root.appendChild( this.inspector.root );
 
 	this.root.addEventListener("DOMNodeInsertedIntoDocument", function(){ that.bindEvents(); });
@@ -158,7 +158,7 @@ InspectorWidget.prototype.onItemDrop = function(e)
 		{
 			case "SceneNode": instance = LS.GlobalScene.getNode( uid ); break;
 			case "Material": instance = LS.ResourcesManager.getMaterial( uid ); break;
-			default: 
+			default:
 				if( LS.Components[class_type] )
 					instance = LS.GlobalScene.findComponentByUId( uid );
 				else if( LS.MaterialClasses[class_type] )
@@ -226,7 +226,7 @@ InspectorWidget.prototype.inspect = function( object, skip_history, title )
 		this.inspectMaterial( object );
 	else if( object.constructor == Array )
 		this.inspectObjectsArray( object );
-	else 
+	else
 		this.inspectObject( object );
 
 	var title_code = "";
@@ -364,7 +364,7 @@ InspectorWidget.prototype.inspectScene = function( scene )
 
 		inspector.addTitle("External Scripts");
 		for(var i in scene.external_scripts)
-		{			
+		{
 			inspector.addStringButton(null, scene.external_scripts[i], { index: i, callback: function(v){
 					if(!v)
 						return;
@@ -380,15 +380,23 @@ InspectorWidget.prototype.inspectScene = function( scene )
 		inspector.addStringButton(null, "", { callback: function(v){
 			}, callback_button: function(v){
 				if(!v)
-					return;
-				//add script
-				scene.external_scripts.push(v);
-				LS.GlobalScene.loadScripts( null, null, function(){
-					LiteGUI.alert("Error loading script");
-					//scene.external_scripts.pop(); //why remove it? 
+					LiteGUI.prompt("Enter URL",inner_set_url);
+				else
+					inner_set_url(v);
+
+				function inner_set_url(url)
+				{
+					if(!url)
+						return;
+					//add script
+					scene.external_scripts.push(url);
+					LS.GlobalScene.loadScripts( null, null, function(){
+						LiteGUI.alert("Error loading script");
+						//scene.external_scripts.pop(); //why remove it?
+						inspector.refresh();
+					});
 					inspector.refresh();
-				});
-				inspector.refresh();
+				}
 			},
 			button: "+"
 		});
@@ -408,7 +416,7 @@ InspectorWidget.prototype.inspectScene = function( scene )
 		inspector.addTitle("Global Scripts");
 		inspector.widgets_per_row = 2;
 		for(var i in scene.global_scripts)
-		{	
+		{
 			inspector.addScript(null, scene.global_scripts[i], { width: "100% - 60px", index: i, callback: function(v){
 					if(!v)
 					{
@@ -463,9 +471,9 @@ InspectorWidget.prototype.inspectScene = function( scene )
 		var container = inspector.startContainer(null,{height:100});
 		container.style.backgroundColor = "#252525";
 		for(var i in scene.preloaded_resources)
-		{			
-			inspector.addStringButton(null, i, { callback: function(v){
-					var old = this.getValue();
+		{
+			inspector.addStringButton(null, i, { resname: i, callback: function(v){
+					var old = this.options.resname;
 					if(old == v)
 						return;
 					delete scene.preloaded_resources[old];
@@ -663,7 +671,7 @@ InspectorWidget.prototype.inspectNode = function( node, component_to_focus )
 			inspector.addFlags( node.flags, { visible: true, is_static: false, selectable: true, locked: false }, { name_width: "75%" } );
 			inspector.widgets_per_row = 1;
 			inspector.addString("Custom flags","", { callback: function(v){
-				node.flags[v] = true;	
+				node.flags[v] = true;
 				inspector.refresh();
 			}});
 		}
@@ -673,13 +681,13 @@ InspectorWidget.prototype.inspectNode = function( node, component_to_focus )
 		//final buttons
 		inspector.widgets_per_row = 2;
 
-		inspector.addButton(null,"Add component", { callback: function(v) { 
+		inspector.addButton(null,"Add component", { callback: function(v) {
 			EditorModule.showAddComponentToNode( node, function(){
 				inspector.refresh();
 			});
 		}});
 
-		inspector.addButtons(null,["Add Behaviour"], { callback: function(v,evt) { 
+		inspector.addButtons(null,["Add Behaviour"], { callback: function(v,evt) {
 
 			var menu = new LiteGUI.ContextMenu( ["Inner Script","Script From File","Global Script","Inner Graph","Graph From File"], { event: evt, callback: function(action) {
 				if(action == "Inner Script")
@@ -721,24 +729,24 @@ InspectorWidget.prototype.inspectMaterial = function(material)
 	var buttons = "<span class='buttons'><img class='options_section' src='imgs/mini-cog.png'></span>";
 	var section = this.inspector.addSection(icon + " " + title + buttons );
 
-	section.querySelector(".wsectiontitle").addEventListener("contextmenu", (function(e) { 
+	section.querySelector(".wsectiontitle").addEventListener("contextmenu", (function(e) {
 		if(e.button != 2) //right button
 			return false;
 		//inner_showActions(e);
-		e.preventDefault(); 
+		e.preventDefault();
 		return false;
 	}).bind(this));
 
 	//inspector.current_section.querySelector('.options_section').addEventListener("click", inner_showActions );
 
 	//mark material as changed
-	LiteGUI.bind( section, "wchange", function() { 
+	LiteGUI.bind( section, "wchange", function() {
 		if(!material)
 			return;
 		var fullpath = material.fullpath || material.filename;
 		if(!fullpath)
 			return;
-		LS.ResourcesManager.resourceModified( material );				
+		LS.ResourcesManager.resourceModified( material );
 	});
 
 	EditorModule.showMaterialProperties( material, this.inspector );
@@ -855,11 +863,11 @@ LiteGUI.Inspector.prototype.showComponent = function(component, inspector)
 		section.sectiontitle.insertBefore( icon, section.sectiontitle.firstChild );
 
 	//right click in title launches the context menu
-	section.querySelector(".wsectiontitle").addEventListener("contextmenu", (function(e) { 
+	section.querySelector(".wsectiontitle").addEventListener("contextmenu", (function(e) {
 		if(e.button != 2) //right button
 			return false;
 		inner_showActions(e);
-		e.preventDefault(); 
+		e.preventDefault();
 		return false;
 	}).bind(this));
 
@@ -867,9 +875,9 @@ LiteGUI.Inspector.prototype.showComponent = function(component, inspector)
 	if(component.enabled !== undefined)
 	{
 		enabler = section.querySelector('.enabler');
-		var checkbox = new LiteGUI.Checkbox( component.enabled, function(v,old){ 
+		var checkbox = new LiteGUI.Checkbox( component.enabled, function(v,old){
 			LiteGUI.trigger( section, "wbeforechange", v );
-			component.enabled = v; 
+			component.enabled = v;
 			LiteGUI.trigger( section, "wchange", old );
 			RenderModule.requestFrame();
 		});
@@ -877,12 +885,12 @@ LiteGUI.Inspector.prototype.showComponent = function(component, inspector)
 		enabler.appendChild( checkbox.root );
 	}
 
-	//save UNDO when something changes TODO remove this 
-	LiteGUI.bind( section, "wbeforechange", function(e) { 
+	//save UNDO when something changes TODO remove this
+	LiteGUI.bind( section, "wbeforechange", function(e) {
 		CORE.userAction("component_changed", component );
 	});
 
-	LiteGUI.bind( section, "wchange", function(e) { 
+	LiteGUI.bind( section, "wchange", function(e) {
 		CORE.afterUserAction("component_changed", component );
 	});
 
@@ -899,7 +907,7 @@ LiteGUI.Inspector.prototype.showComponent = function(component, inspector)
 	//in case the options button is pressed or the right button, show context menu
 	section.querySelector('.options_section').addEventListener("click", inner_showActions );
 
-	function inner_showActions( e ) { 
+	function inner_showActions( e ) {
 		//console.log("Show options");
 		window.SELECTED = component; //useful trick
 		EditorModule.showComponentContextMenu( component, e );
@@ -910,10 +918,10 @@ LiteGUI.Inspector.prototype.showComponent = function(component, inspector)
 	var drag_counter = 0; //hack because HTML5 sux sometimes
 
 	//drop component
-	section.addEventListener("dragover", function(e) { 
+	section.addEventListener("dragover", function(e) {
 		e.preventDefault();
 	});
-	section.addEventListener("dragenter", function(e) { 
+	section.addEventListener("dragenter", function(e) {
 		drag_counter++;
 		if( event.dataTransfer.types.indexOf("type") != -1 && drag_counter == 1 )
 		{
@@ -921,13 +929,13 @@ LiteGUI.Inspector.prototype.showComponent = function(component, inspector)
 		}
 		e.preventDefault();
 	},true);
-	section.addEventListener("dragleave", function(e) { 
+	section.addEventListener("dragleave", function(e) {
 		drag_counter--;
 		if(drag_counter == 0)
 			this.style.opacity = null;
 		e.preventDefault();
 	},true);
-	section.addEventListener("drop", function(event) { 
+	section.addEventListener("drop", function(event) {
 		console.log("drop");
 		event.preventDefault();
 		this.style.opacity = null;

@@ -6,7 +6,7 @@ var CodingModule = //do not change
 	show_sceneview: true, //3d view
 	show_panel: false, //side panel
 
-	is_sceneview_visible: true, 
+	is_sceneview_visible: true,
 
 	APIs: {}, //here you can register function calls of the API
 	windows: [], //external windows
@@ -18,7 +18,7 @@ var CodingModule = //do not change
 		this.tab = LiteGUI.main_tabs.addTab( this.name, {
 			id:"codingtab",
 			bigicon: this.bigicon,
-			size: "full", 
+			size: "full",
 			callback: function(tab) {
 				CodingModule.show3DWindow( CodingModule.show_sceneview );
 				CodingModule.showSidePanel( CodingModule.show_panel );
@@ -40,7 +40,7 @@ var CodingModule = //do not change
 
 		//tabs for every file
 		//register some APIs used for autocompletion
-		
+
 		//this.registerAPI("glsl", ["uniform","varying","sampler2D","samplerCube"] );
 		this.registerAPI("glsl", ["texture2D","textureCube","radians","degrees","sin","cos","tan","asin","acos","atan","pow","exp","log","exp2","length"] );
 		this.registerAPI("glsl", ["IN.color","IN.vertex","IN.normal","IN.uv","IN.uv1","IN.camPos","IN.viewDir","IN.worldPos","IN.worldNormal","IN.screenPos"] );
@@ -149,7 +149,7 @@ var CodingModule = //do not change
 			node.addComponent( component );
 			this.editInstanceCode( component, { id: component.uid, title: node.id, lang: "javascript", path: component.uid, help: LS.Components.Script.coding_help });
 			this.openTab();
-		} 
+		}
 		else if (type == "ScriptFromFile")
 		{
 			var component = new LS.Components.ScriptFromFile();
@@ -218,7 +218,7 @@ var CodingModule = //do not change
 		var lang = options.lang;
 		if( !lang )
 		{
-			if( instance.constructor.is_material || instance.constructor == LS.ShaderCode ) 
+			if( instance.constructor.is_material || instance.constructor == LS.ShaderCode )
 				lang = "glsl";
 			if( fullpath )
 			{
@@ -368,7 +368,7 @@ var CodingModule = //do not change
 		{
 			localStorage.setItem("_refresh_scene", JSON.stringify( LS.GlobalScene.serialize() ) );
 			location.reload();
-			e.preventDefault();		
+			e.preventDefault();
 		}
 
 		//this key event must be redirected when the 3D area is selected
@@ -434,7 +434,7 @@ LS.Components.Script["@inspector"] = function( component, inspector )
 	var context = component.getContext();
 
 	var icon = this.current_section.querySelector(".script-context-icon");
-	icon.addEventListener("dragstart", function(event) { 
+	icon.addEventListener("dragstart", function(event) {
 		var context_locator = component.getLocator() + "/context";
 		if(!event.shiftKey)
 			context_locator = component.root.name + "/" + component.uid + "/context";
@@ -472,7 +472,7 @@ LS.Components.ScriptFromFile["@inspector"] = function( component, inspector )
 	var context = component.getContext();
 
 	var icon = this.current_section.querySelector(".script-context-icon");
-	icon.addEventListener("dragstart", function(event) { 
+	icon.addEventListener("dragstart", function(event) {
 		var context_locator = component.getLocator() + "/context";
 		if(!event.shiftKey)
 			context_locator = component.root.name + "/_" + component.name + "/context";
@@ -485,7 +485,7 @@ LS.Components.ScriptFromFile["@inspector"] = function( component, inspector )
 	});
 
 	inspector.widgets_per_row = 3;
-	inspector.addResource( "Filename", component.filename, { name_width: 70, width: "100% - 130px", category: "Script", align:"right", callback: function(v) { 
+	inspector.addResource( "Filename", component.filename, { name_width: 70, width: "100% - 130px", category: "Script", align:"right", callback: function(v) {
 		component.filename = v;
 	}});
 
@@ -557,7 +557,7 @@ LS.Components.Script.prototype.onComponentInfo = function( widgets )
 				continue;
 			values.push(i);
 		}
-		widgets.addCombo("Functions", "", { values: values, callback: function(v){ 
+		widgets.addCombo("Functions", "", { values: values, callback: function(v){
 			//TODO
 		}});
 	}
@@ -575,7 +575,7 @@ LiteGUI.Inspector.prototype.addCode = function( name, value, options )
 
 	var instance = options.instance || {};
 	var uid = instance.uid || ("code_" + this.tab_index);
-	var instance_settings = { 
+	var instance_settings = {
 		id: uid,
 		path: instance.uid,
 		title: uid
@@ -668,7 +668,7 @@ LiteGUI.Inspector.prototype.addCode = function( name, value, options )
 		var codepad = new CodingPadWidget();
 		element.appendChild( codepad.root );
 		codepad.editInstanceCode( instance, instance_settings );
-		codepad.top_widgets.addButton(null,"In Editor",{ callback: function() { 
+		codepad.top_widgets.addButton(null,"In Editor",{ callback: function() {
 			if(options.callback_button)
 				options.callback_button();
 			inspector.refresh();
@@ -695,9 +695,9 @@ LiteGUI.Inspector.prototype.addCode = function( name, value, options )
 LiteGUI.Inspector.widget_constructors["code"] = "addCode";
 
 
-LS.Components.Script.actions["breakpoint_on_call"] = { 
-	title: "Breakpoint on call", 
-	callback: function() { 
+LS.Components.Script.actions["breakpoint_on_call"] = {
+	title: "Breakpoint on call",
+	callback: function() {
 		if(!this._root)
 		{
 			console.warn("Script is not attached to a node?");
@@ -709,9 +709,9 @@ LS.Components.Script.actions["breakpoint_on_call"] = {
 
 
 
-LS.Components.Script.actions["convert_to_script"] = { 
-	title: "Convert to ScriptFromFile", 
-	callback: function() { 
+LS.Components.Script.actions["convert_to_script"] = {
+	title: "Convert to ScriptFromFile",
+	callback: function() {
 		if(!this._root)
 		{
 			console.warn("Script is not attached to a node?");
@@ -745,9 +745,9 @@ LS.Components.Script.actions["convert_to_script"] = {
 };
 
 LS.Components.ScriptFromFile.actions = {}; //do not share with script
-LS.Components.ScriptFromFile.actions["convert_to_script"] = { 
-	title: "Convert to Script", 
-	callback: function() { 
+LS.Components.ScriptFromFile.actions["convert_to_script"] = {
+	title: "Convert to Script",
+	callback: function() {
 		if(!this._root)
 		{
 			console.warn("Script is not attached to a node?");
@@ -991,7 +991,7 @@ this.createSampler(\"Spec. Texture\",\"u_specular_texture\");\n\
 this.createSampler(\"Normal Texture\",\"u_normal_texture\",{ missing:'normal' });\n\
 this._light_mode = 1;\n\
 \n\
-\\color.vs\n\
+\\default.vs\n\
 \n\
 precision mediump float;\n\
 attribute vec3 a_vertex;\n\
@@ -1060,6 +1060,7 @@ uniform sampler2D u_texture;\n\
 uniform sampler2D u_specular_texture;\n\
 uniform sampler2D u_normal_texture;\n\
 \n\
+#pragma snippet \"input\"\n\
 #pragma shaderblock \"light\"\n\
 #pragma shaderblock \"applyReflection\"\n\
 \n\
@@ -1118,6 +1119,7 @@ uniform mat4 u_view;\n\
 uniform mat4 u_viewprojection;\n\
 \n\
 //globals\n\
+uniform vec3 u_camera_eye;\n\
 uniform float u_time;\n\
 uniform vec4 u_viewport;\n\
 uniform float u_point_size;\n\

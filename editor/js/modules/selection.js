@@ -87,6 +87,8 @@ var SelectionModule = {
 
 		if(selection.node)
 			selection.node._is_selected = true;
+		if(selection.instance && selection.instance.constructor.is_component)
+			selection.instance._is_selected = true;
 
 		//send event
 		if(!skip_events)
@@ -102,9 +104,11 @@ var SelectionModule = {
 		{
 			for(var i = 0; i < SelectionModule.selection_array.length; i++)
 			{
-				var node = SelectionModule.selection_array[i].node;
-				if(node)
-					node._is_selected = false;
+				var s = SelectionModule.selection_array[i];
+				if(s.instance && s.instance._is_selected)
+					s.instance._is_selected = false;
+				if(s.node)
+					s.node._is_selected = false;
 			}
 		}
 
@@ -148,6 +152,8 @@ var SelectionModule = {
 		this.selection_array.push( selection );
 		if(selection.node)
 			selection.node._is_selected = true;
+		if(selection.instance && selection.instance.constructor.is_component)
+			selection.node._is_selected = true;
 
 		//repaint
 		RenderModule.requestFrame();
@@ -166,7 +172,8 @@ var SelectionModule = {
 				this.selection_array.splice(i,1);
 				if(selection.node)
 					selection.node._is_selected = false;
-
+				if(selection.instance && selection.instance._is_selected)
+					selection.instance._is_selected = false;
 
 				if(selection == this.selection)
 				{
@@ -181,7 +188,7 @@ var SelectionModule = {
 					else
 						LEvent.trigger( LS.GlobalScene, "other_node_deselected", this.selection ? this.selection.node : null );
 				}
-				return;			
+				return;
 			}
 		}
 	},
@@ -393,7 +400,7 @@ var SelectionModule = {
 	{
 		return this.selection_array;
 	},
-	
+
 	//returns and array with every selected node uid, used mostly for UNDO
 	getSelectionUIds: function()
 	{
@@ -441,13 +448,13 @@ var SelectionModule = {
 			var scene = LS.GlobalScene;
 
 			//root component
-			if(selection.instance && selection.instance.constructor.is_component && selection.node == LS.GlobalScene.root) 
+			if(selection.instance && selection.instance.constructor.is_component && selection.node == LS.GlobalScene.root)
 			{
 				var component = selection.instance;
 				new_component = component.clone();
 				selection.node.addComponent( new_component );
 
-				UndoModule.addUndoStep({ 
+				UndoModule.addUndoStep({
 					data: { compo_uid: new_component._uid },
 					callback_undo: function(d) {
 						var compo = scene.root.getComponentByUid( d.compo_uid );
@@ -473,7 +480,7 @@ var SelectionModule = {
 			for(var i in result)
 				created_uids.push( result[i].uid );
 			//DELETE NODES
-			UndoModule.addUndoStep({ 
+			UndoModule.addUndoStep({
 				title: "Cloned " + (created_uids.length > 1 ? "nodes" : "node"),
 				data: { uids: created_uids, old_selection: old_selection },
 				callback_undo: function(d) {
@@ -522,7 +529,7 @@ var SelectionModule = {
 			var node = selection.node;
 			if(!node || !node.parentNode)
 				continue;
-	
+
 			//remove node
 			if( selection.instance.constructor === LS.SceneNode && !selection.instance._is_root )
 			{
@@ -539,7 +546,7 @@ var SelectionModule = {
 		if(!data_removed.length)
 			return;
 
-		//Create UNDO STEP 
+		//Create UNDO STEP
 		CORE.userAction("selection_removed", data_removed );
 
 		EditorModule.inspect();
@@ -597,7 +604,7 @@ var SelectionModule = {
 	saveSelection: function()
 	{
 		var nodes = this.getSelectedNodes();
-		var r = { 
+		var r = {
 			type: "selection",
 			nodes: []
 		};

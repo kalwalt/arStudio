@@ -117,7 +117,7 @@ var ToolsModule = {
 			this.current_tool.onClick();
 
 		if(tool.module)
-		{ 
+		{
 			RenderModule.canvas_manager.addWidget(tool.module);
 			tool.module.enabled = true;
 		}
@@ -163,7 +163,7 @@ var ToolsModule = {
 		if(!RenderModule.frame_updated)
 			return;
 
-		if(!this._active_camera)
+		if(!this._active_camera || this._active_camera != LS.Renderer._current_camera)
 			return;
 		var camera = this._active_camera;
 		LS.Renderer.enableCamera( camera ); //sets viewport, update matrices and set Draw
@@ -315,16 +315,16 @@ var ToolsModule = {
 			this.classList.add("enabled");
 		});
 
-		element.addEventListener("contextmenu", function(e) { 
+		element.addEventListener("contextmenu", function(e) {
 			if(e.button != 2) //right button
 				return false;
-			e.preventDefault(); 
+			e.preventDefault();
 			ToolsModule.showToolProperties( this.data );
 			return false;
 		} );
 
-		element.addEventListener("dblclick", function(e) { 
-			e.preventDefault(); 
+		element.addEventListener("dblclick", function(e) {
+			e.preventDefault();
 			ToolsModule.showToolProperties( this.data );
 			return false;
 		} );
@@ -368,10 +368,10 @@ var ToolsModule = {
 			return false;
 		}
 
-		element.addEventListener("contextmenu", function(e) { 
+		element.addEventListener("contextmenu", function(e) {
 			if(e.button != 2) //right button
 				return false;
-			e.preventDefault(); 
+			e.preventDefault();
 			ToolsModule.showButtonProperties( this.data );
 			return false;
 		});
@@ -474,7 +474,7 @@ var ToolUtils = {
 		camera2d.setOrthographic( viewport[0], viewport[0] + viewport[2], viewport[1], viewport[1] + viewport[3], -1, 1);
 		camera2d.updateMatrices();
 		LS.Draw.setViewProjectionMatrix( camera2d._view_matrix, camera2d._projection_matrix, camera2d._viewprojection_matrix );
-		
+
 		return camera2d;
 	},
 
@@ -501,7 +501,7 @@ var ToolUtils = {
 		var model = null;
 		var center = null;
 		var camera = this.getCamera();
-		
+
 		if(node.transform)
 		{
 			center = node.transform.getGlobalPosition();
@@ -564,7 +564,7 @@ var ToolUtils = {
 		//parent.transform.applyTransformMatrix(R, true);
 		scene.refresh();
 	},
-	
+
 	//test the collision point of a ray passing a pixel against a perpendicular plane passing through center
 	testPerpendicularPlane: function(x,y, center, result, camera)
 	{
@@ -642,7 +642,7 @@ var ToolUtils = {
 	},
 
 	//test if a ray collides circle
-	testCircle: (function(){ 
+	testCircle: (function(){
 		var temp = vec3.create();
 		return function(ray, axis, center, radius, result, tolerance )
 		{
@@ -679,4 +679,3 @@ var notoolButton = {
 };
 
 ToolsModule.registerButton(notoolButton);
-

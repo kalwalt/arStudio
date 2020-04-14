@@ -74,42 +74,42 @@ var LabModule = {
 		inspector.clear();
 
 		inspector.addCheckbox("Show name", this.show_name, { callback: function(v){
-			LabModule.show_name = v;			
-		}});		
+			LabModule.show_name = v;
+		}});
 
 		if( this.mode == "textures" )
 		{
-			inspector.addButton( null, "Reset", { callback: function(){ 
+			inspector.addButton( null, "Reset", { callback: function(){
 				LabModule.channels = "RGBA";
 				LabModule.exposure = 1;
 			}});
 			inspector.addCombo("Channels", this.channels, { values:["RGBA","RGB","R","G","B","A"], callback: function(v){
-				LabModule.channels = v;			
-			}});		
+				LabModule.channels = v;
+			}});
 			inspector.addSlider("Exposure", this.exposure, { max: 4, callback: function(v){
-				LabModule.exposure = v;			
-			}});		
+				LabModule.exposure = v;
+			}});
 		}
 		else if( this.mode == "meshes" )
 		{
 			inspector.addCheckbox("Rotate", this.rotate, { callback: function(v){
-				LabModule.rotate = v;			
+				LabModule.rotate = v;
 			}});
 			inspector.addCombo("Axis", this.meshes_axis, { values:["X","Y","Z"], callback: function(v){
-				LabModule.meshes_axis = v;			
-			}});		
-			inspector.addCombo("Render Mode", this.meshes_mode, { values:["phong_wireframe","phong","wireframe","X-RAY","UV_wireframe"], callback: function(v){
-				LabModule.meshes_mode = v;			
-			}});		
+				LabModule.meshes_axis = v;
+			}});
+			inspector.addCombo("Render Mode", this.meshes_mode, { values:["phong_wireframe","phong","normal","wireframe","X-RAY","UV_wireframe","Normal Cloud"], callback: function(v){
+				LabModule.meshes_mode = v;
+			}});
 			inspector.addCheckbox("Cull face", this.cull_face, { callback: function(v){
-				LabModule.cull_face = v;			
-			}});		
+				LabModule.cull_face = v;
+			}});
 		}
 		else if( this.mode == "materials" )
 		{
 			inspector.addCheckbox("Rotate", this.rotate, { callback: function(v){
-				LabModule.rotate = v;			
-			}});		
+				LabModule.rotate = v;
+			}});
 		}
 	},
 
@@ -156,6 +156,25 @@ var LabModule = {
 			}\
 		');
 
+		this._normal_shader = new GL.Shader('\
+			precision mediump float;\n\
+			attribute vec3 a_vertex;\n\
+			attribute vec3 a_normal;\n\
+			varying vec3 v_normal;\n\
+			uniform mat4 u_model;\n\
+			uniform mat4 u_mvp;\n\
+			void main() {\n\
+				v_normal = (u_model * vec4(a_normal,0.0)).xyz;\n\
+				gl_Position = u_mvp * vec4(a_vertex,1.0);\n\
+			}\
+			','\
+			precision mediump float;\n\
+			varying vec3 v_normal;\n\
+			void main() {\n\
+			  gl_FragColor = vec4(abs(v_normal),1.0);\n\
+			}\
+		');
+
 		this._uv_shader = new GL.Shader('\
 			precision mediump float;\n\
 			attribute vec3 a_vertex;\n\
@@ -172,6 +191,27 @@ var LabModule = {
 			uniform vec4 u_color;\n\
 			void main() {\n\
 			  gl_FragColor = u_color;\n\
+			}\
+		');
+
+		this._normal_cloud_shader = new GL.Shader('\
+			precision mediump float;\n\
+			attribute vec3 a_vertex;\n\
+			attribute vec3 a_normal;\n\
+			varying vec3 v_color;\n\
+			uniform mat4 u_model;\n\
+			uniform mat4 u_mvp;\n\
+			void main() {\n\
+				v_color = abs(a_normal);\n\
+				gl_Position = u_mvp * vec4(a_normal,1.0);\n\
+				gl_PointSize = 4.0;\n\
+			}\
+			','\
+			precision mediump float;\n\
+			varying vec3 v_color;\n\
+			uniform vec4 u_color;\n\
+			void main() {\n\
+			  gl_FragColor = vec4(v_color,1.0);\n\
 			}\
 		');
 
@@ -243,7 +283,7 @@ var LabModule = {
 
 	render: function()
 	{
-		if(!this.enabled) 
+		if(!this.enabled)
 			return;
 
 		gl.clearColor(0.02,0.02,0.02,1.0);
@@ -357,7 +397,7 @@ var LabModule = {
 			var black = [0,0,0,1];
 
 			//inside camera
-			if(startx <= gl.canvas.width && starty <= gl.canvas.height && 
+			if(startx <= gl.canvas.width && starty <= gl.canvas.height &&
 				startx + sizex > 0 && starty + sizey > 0 )
 			{
 				if(tex.texture_type == gl.TEXTURE_2D)
@@ -373,7 +413,7 @@ var LabModule = {
 					{
 						if(this.channels == "RGBA")
 							gl.enable( gl.BLEND );
-						else 
+						else
 							gl.disable( gl.BLEND );
 						LS.Draw.renderPlane([ gl._matrix[6] + (posx + w*0.5) * gl._matrix[0], gl._matrix[7] + (posy + h*0.5) * gl._matrix[4], 0], [ w*0.5 * gl._matrix[0], -h*0.5 * gl._matrix[4] ], tex, this._channel_shader );
 					}
@@ -446,11 +486,20 @@ var LabModule = {
 		if( this.meshes_mode.indexOf("wireframe") != -1 )
 			wireframe_shader = LS.Draw.shader;
 		var blend = false;
+		var primitive = gl.TRIANGLES;
 		if( this.meshes_mode == "X-RAY" )
 		{
 			shader = LS.Draw.shader;
 			LS.Draw.setColor(0.05,0.05,0.05,1);
 			blend = true;
+		}
+		else if( this.meshes_mode == "normal" )
+			shader = this._normal_shader;
+		else if( this.meshes_mode == "Normal Cloud" )
+		{
+			shader = this._normal_cloud_shader;
+			LS.Draw.setColor(1,1,1,1);
+			primitive = gl.POINTS;
 		}
 		else if( this.meshes_mode == "UV_wireframe" )
 		{
@@ -480,7 +529,7 @@ var LabModule = {
 			var sizey = h * gl._matrix[4];
 
 			//inside camera
-			if(startx <= gl.canvas.width && starty <= gl.canvas.height && 
+			if(startx <= gl.canvas.width && starty <= gl.canvas.height &&
 				startx + sizex > 0 && starty + sizey > 0 )
 			{
 				//move camera to bounding area
@@ -488,6 +537,11 @@ var LabModule = {
 				var halfsize = BBox.getHalfsize( bounding );
 				var center = BBox.getCenter( bounding );
 				var radius = vec3.length( halfsize );
+				if(shader == this._normal_cloud_shader)
+				{
+					radius = 2;
+					center = null;
+				}
 				mesh_camera.setPerspective( 45,1,0.1,radius * 4 );
 
 				if(this.meshes_axis == "Y")
@@ -498,7 +552,9 @@ var LabModule = {
 				LS.Draw.pushCamera();
 				LS.Draw.setCamera( mesh_camera );
 				LS.Draw.setMatrix( matrix );
-				LS.Draw.translate( -center[0], -center[1], -center[2]);
+
+				if(center)
+					LS.Draw.translate( -center[0], -center[1], -center[2]);
 
 				gl.viewport( startx, starty, sizex, sizey );
 
@@ -520,7 +576,7 @@ var LabModule = {
 					gl.disable( gl.CULL_FACE );
 
 				if(shader)
-					LS.Draw.renderMesh( mesh, gl.TRIANGLES, shader );
+					LS.Draw.renderMesh( mesh, primitive, shader );
 				gl.enable( gl.BLEND );
 
 				if( wireframe_shader && mesh.vertexBuffers["vertices"] ) //wireframe
@@ -594,7 +650,7 @@ var LabModule = {
 			var sizex = w * gl._matrix[0];
 			var sizey = h * gl._matrix[4];
 
-			if(startx <= gl.canvas.width && starty <= gl.canvas.height && 
+			if(startx <= gl.canvas.width && starty <= gl.canvas.height &&
 				startx + sizex > 0 && starty + sizey > 0 )
 			{
 				gl.viewport( startx, starty, sizex, sizey );
@@ -657,7 +713,7 @@ var LabModule = {
 
 		return true;
 	},
-		
+
 	mousewheel: function(e)
 	{
 		if(!this.enabled)
@@ -676,7 +732,7 @@ var LabModule = {
 		for( var i = 0; i < this.items.length; ++i)
 		{
 			var item = this.items[i];
-			if( item.x < x && item.y < y && 
+			if( item.x < x && item.y < y &&
 				x < (item.x + item.w) && y < (item.y + item.h))
 				return item;
 		}
@@ -690,7 +746,7 @@ var LabModule = {
 
 	convertCanvasToOffset: function(pos)
 	{
-		return [(pos[0] + this.offset[0]) * this.scale, 
+		return [(pos[0] + this.offset[0]) * this.scale,
 			(pos[1] + this.offset[1]) * this.scale ];
 	},
 

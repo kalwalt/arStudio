@@ -61,7 +61,7 @@ GL.FLOAT = 5126;
 GL.HALF_FLOAT_OES = 36193; //webgl 1.0 only
 
 //webgl2 formats
-GL.HALF_FLOAT = 5131; 
+GL.HALF_FLOAT = 5131;
 GL.DEPTH_COMPONENT16 = 33189;
 GL.DEPTH_COMPONENT24 = 33190;
 GL.DEPTH_COMPONENT32F = 36012;
@@ -276,14 +276,16 @@ global.cartesianToPolar = function( out, x,y,z )
 //Global Scope
 //better array conversion to string for serializing
 var typed_arrays = [ Uint8Array, Int8Array, Uint16Array, Int16Array, Uint32Array, Int32Array, Float32Array, Float64Array ];
-function typedToArray(){ 
+function typedToArray(){
 	return Array.prototype.slice.call(this);
 }
-typed_arrays.forEach( function(v) { 
+typed_arrays.forEach( function(v) {
 	if(!v.prototype.toJSON)
 		Object.defineProperty( v.prototype, "toJSON", {
 			value: typedToArray,
-			enumerable: false
+			enumerable: false,
+            configurable: true,
+            writable: true
 		});
 });
 
@@ -337,7 +339,7 @@ global.getClassName = function getClassName(obj)
 /**
 * clone one object recursively, only allows objects containing number,strings,typed-arrays or other objects
 * @method cloneObject
-* @param {Object} object 
+* @param {Object} object
 * @param {Object} target if omited an empty object is created
 * @return {Object}
 */
@@ -432,7 +434,7 @@ if(typeof(Image) != "undefined") //not existing inside workers
 }
 
 //you must pass an object with characters to replace and replace with what {"a":"A","c":"C"}
-if(!String.prototype.hasOwnProperty("replaceAll")) 
+if(!String.prototype.hasOwnProperty("replaceAll"))
 	Object.defineProperty(String.prototype, "replaceAll", {
 		value: function(words){
 			var str = this;
@@ -441,7 +443,7 @@ if(!String.prototype.hasOwnProperty("replaceAll"))
 			return str;
 		},
 		enumerable: false
-	});	
+	});
 
 /*
 String.prototype.replaceAll = function(words){
@@ -453,7 +455,7 @@ String.prototype.replaceAll = function(words){
 */
 
 //used for hashing keys
-if(!String.prototype.hasOwnProperty("hashCode")) 
+if(!String.prototype.hasOwnProperty("hashCode"))
 	Object.defineProperty(String.prototype, "hashCode", {
 		value: function(){
 			var hash = 0, i, c, l;
@@ -466,7 +468,7 @@ if(!String.prototype.hasOwnProperty("hashCode"))
 			return hash;
 		},
 		enumerable: false
-	});	
+	});
 
 //avoid errors when Typed array is expected and regular array is found
 //Array.prototype.subarray = Array.prototype.slice;
@@ -504,16 +506,16 @@ global.extendClass = GL.extendClass = function extendClass( target, origin ) {
 		for(var i = 0; i < prop_names.length; ++i) //only enumerables
 		{
 			var name = prop_names[i];
-			//if(!origin.prototype.hasOwnProperty(name)) 
+			//if(!origin.prototype.hasOwnProperty(name))
 			//	continue;
 
 			if(target.prototype.hasOwnProperty(name)) //avoid overwritting existing ones
 				continue;
 
-			//copy getters 
+			//copy getters
 			if(origin.prototype.__lookupGetter__(name))
 				target.prototype.__defineGetter__(name, origin.prototype.__lookupGetter__(name));
-			else 
+			else
 				target.prototype[name] = origin.prototype[name];
 
 			//and setters
@@ -522,11 +524,11 @@ global.extendClass = GL.extendClass = function extendClass( target, origin ) {
 		}
 	}
 
-	if(!target.hasOwnProperty("superclass")) 
+	if(!target.hasOwnProperty("superclass"))
 		Object.defineProperty(target, "superclass", {
 			get: function() { return origin },
 			enumerable: false
-		});	
+		});
 }
 
 
@@ -572,7 +574,7 @@ global.HttpRequest = GL.request = function HttpRequest( url, params, callback, e
 	{
 		LEvent.trigger(xhr,"fail",err);
 	}
-	
+
 	if(options)
 	{
 		for(var i in options)
@@ -610,10 +612,10 @@ global.getFileExtension = function getFileExtension(url)
 	if(question != -1)
 		url = url.substr(0,question);
 	var point = url.lastIndexOf(".");
-	if(point == -1) 
+	if(point == -1)
 		return "";
 	return url.substr(point+1).toLowerCase();
-} 
+}
 
 
 //allows to pack several (text)files inside one single file (useful for shaders)
@@ -623,7 +625,7 @@ global.loadFileAtlas = GL.loadFileAtlas = function loadFileAtlas(url, callback, 
 	var deferred_callback = null;
 
 	HttpRequest(url, null, function(data) {
-		var files = GL.processFileAtlas(data); 
+		var files = GL.processFileAtlas(data);
 		if(callback)
 			callback(files);
 		if(deferred_callback)
@@ -669,7 +671,7 @@ global.processFileAtlas = GL.processFileAtlas = function(data, skip_trim)
 global.halfFloatToFloat = function( h )
 {
 	function convertMantissa(i) {
-	    if (i == 0) 
+	    if (i == 0)
 			return 0
 		else if (i < 1024)
 		{
@@ -709,7 +711,7 @@ global.halfFloatToFloat = function( h )
 
 	var v = convertMantissa( convertOffset( h >> 10) + (h & 0x3ff) ) + convertExponent(h >> 10);
 	var a = new Uint32Array([v]);
-	return (new Float32Array(a.buffer))[0]; 
+	return (new Float32Array(a.buffer))[0];
 }
 */
 
@@ -722,7 +724,7 @@ global.typedArrayToArray = function(array)
 	return r;
 }
 
-global.RGBToHex = function(r, g, b) { 
+global.RGBToHex = function(r, g, b) {
 	r = Math.min(255, r*255)|0;
 	g = Math.min(255, g*255)|0;
 	b = Math.min(255, b*255)|0;
@@ -864,6 +866,7 @@ global.hexColorToRGBA = (function() {
 	return color;
 	}
 })();
+
 /**
  * @fileoverview dds - Utilities for loading DDS texture files
  * @author Brandon Jones
@@ -896,11 +899,11 @@ global.hexColorToRGBA = (function() {
 var DDS = (function () {
 
     "use strict";
-    
+
     // All values and structures referenced from:
     // http://msdn.microsoft.com/en-us/library/bb943991.aspx/
     var DDS_MAGIC = 0x20534444;
-    
+
     var DDSD_CAPS = 0x1,
         DDSD_HEIGHT = 0x2,
         DDSD_WIDTH = 0x4,
@@ -913,7 +916,7 @@ var DDS = (function () {
     var DDSCAPS_COMPLEX = 0x8,
         DDSCAPS_MIPMAP = 0x400000,
         DDSCAPS_TEXTURE = 0x1000;
-        
+
     var DDSCAPS2_CUBEMAP = 0x200,
         DDSCAPS2_CUBEMAP_POSITIVEX = 0x400,
         DDSCAPS2_CUBEMAP_NEGATIVEX = 0x800,
@@ -965,7 +968,7 @@ var DDS = (function () {
     var off_pfFlags = 20;
     var off_pfFourCC = 21;
     var off_caps = 27;
-    
+
     // Little reminder for myself where the above values come from
     /*DDS_PIXELFORMAT {
         int32 dwSize; // offset: 19
@@ -977,7 +980,7 @@ var DDS = (function () {
         int32 dwBBitMask;
         int32 dwABitMask; // offset: 26
     };
-    
+
     DDS_HEADER {
         int32 dwSize; // 1
         int32 dwFlags;
@@ -1026,7 +1029,7 @@ var DDS = (function () {
         var dstI = 0;
         var i = 0;
         var r0 = 0, g0 = 0, b0 = 0, r1 = 0, g1 = 0, b1 = 0;
-    
+
         var blockWidth = width / 4;
         var blockHeight = height / 4;
         for (var blockY = 0; blockY < blockHeight; blockY++) {
@@ -1114,7 +1117,7 @@ var DDS = (function () {
             console.error("Invalid magic number in DDS header");
             return 0;
         }
-        
+
         if(!header[off_pfFlags] & DDPF_FOURCC) {
             console.error("Unsupported format, must contain a FourCC code");
             return 0;
@@ -1256,7 +1259,7 @@ var DDS = (function () {
             console.error("Invalid magic number in DDS header");
             return 0;
         }
-        
+
         if(!header[off_pfFlags] & DDPF_FOURCC) {
             console.error("Unsupported format, must contain a FourCC code");
             return 0;
@@ -1368,7 +1371,7 @@ var DDS = (function () {
      */
     function loadDDSTextureEx(gl, ext, src, texture, loadMipmaps, callback) {
         var xhr = new XMLHttpRequest();
-        
+
         xhr.open('GET', src, true);
         xhr.responseType = "arraybuffer";
         xhr.onload = function() {
@@ -1674,7 +1677,7 @@ vec4.random = function(vec, scale)
 	vec[0] = Math.random() * scale;
 	vec[1] = Math.random() * scale;
 	vec[2] = Math.random() * scale;
-	vec[3] = Math.random() * scale;	
+	vec[3] = Math.random() * scale;
 	return vec;
 }
 
@@ -1767,23 +1770,23 @@ vec3.unproject = function (out, vec, viewprojection, viewport) {
 
 	var m = unprojectMat;
 	var v = unprojectVec;
-	
+
 	v[0] = (vec[0] - viewport[0]) * 2.0 / viewport[2] - 1.0;
 	v[1] = (vec[1] - viewport[1]) * 2.0 / viewport[3] - 1.0;
 	v[2] = 2.0 * vec[2] - 1.0;
 	v[3] = 1.0;
-	
-	if(!mat4.invert(m,viewprojection)) 
+
+	if(!mat4.invert(m,viewprojection))
 		return null;
-	
+
 	vec4.transformMat4(v, v, m);
-	if(v[3] === 0.0) 
+	if(v[3] === 0.0)
 		return null;
 
 	out[0] = v[0] / v[3];
 	out[1] = v[1] / v[3];
 	out[2] = v[2] / v[3];
-	
+
 	return out;
 };
 
@@ -1936,7 +1939,7 @@ quat.lookRotation = (function(){
 			 q[1] = 0.5 * num6;
 			 q[2] = (m21 + m12) * num3;
 			 q[3] = (m20 - m02) * num3;
-			 return q; 
+			 return q;
 		 }
 		 var num5 = Math.sqrt(((1 + m22) - m00) - m11);
 		 var num2 = 0.5 / num5;
@@ -1957,13 +1960,13 @@ quat.toEuler = function(out, quat) {
 	{
 		heading = 2 * Math.atan2(q[0],q[3]);
 		bank = 0;
-		attitude = 0; //?
+		attitude = 0; //�?
 	}
 	else if( (q[0]*q[1] + q[2]*q[3]) == 0.5 )
 	{
 		heading = -2 * Math.atan2(q[0],q[3]);
 		bank = 0;
-		attitude = 0; //?
+		attitude = 0; //�?
 	}
 	else
 	{
@@ -2056,7 +2059,7 @@ quat.fromEuler = function(out, vec) {
 };
 
 
-//not tested
+//not tested, it gives weird results sometimes
 quat.fromMat4 = function(out,m)
 {
 	var trace = m[0] + m[5] + m[10];
@@ -2066,7 +2069,7 @@ quat.fromMat4 = function(out,m)
 		out[3] = s * 0.5;//w
 		var recip = 0.5 / s;
 		out[0] = ( m[9] - m[6] ) * recip; //2,1  1,2
-		out[1] = ( m[2] - m[8] ) * recip; //0,2  2,0
+		out[1] = ( m[8] - m[2] ) * recip; //0,2  2,0
 		out[2] = ( m[4] - m[1] ) * recip; //1,0  0,1
 	}
 	else
@@ -2155,7 +2158,7 @@ quat.fromMat3AndQuat = (function(){
 })();
 
 //http://number-none.com/product/IK%20with%20Quaternion%20Joint%20Limits/
-quat.rotateToFrom = (function(){ 
+quat.rotateToFrom = (function(){
 	var tmp = vec3.create();
 	return function(out, v1, v2)
 	{
@@ -2164,23 +2167,23 @@ quat.rotateToFrom = (function(){
 		var dot = vec3.dot(v1, v2);
 		if( dot < -1 + 0.01){
 			out[0] = 0;
-			out[1] = 1; 
-			out[2] = 0; 
-			out[3] = 0; 
+			out[1] = 1;
+			out[2] = 0;
+			out[3] = 0;
 			return out;
 		}
 		out[0] = axis[0] * 0.5;
-		out[1] = axis[1] * 0.5; 
-		out[2] = axis[2] * 0.5; 
-		out[3] = (1 + dot) * 0.5; 
-		quat.normalize(out, out); 
-		return out;    
+		out[1] = axis[1] * 0.5;
+		out[2] = axis[2] * 0.5;
+		out[3] = (1 + dot) * 0.5;
+		quat.normalize(out, out);
+		return out;
 	}
 })();
 
-quat.lookAt = (function(){ 
+quat.lookAt = (function(){
 	var axis = vec3.create();
-	
+
 	return function( out, forwardVector, up )
 	{
 		var dot = vec3.dot( vec3.FRONT, forwardVector );
@@ -2203,10 +2206,6 @@ quat.lookAt = (function(){
 		return out;
 	}
 })();
-
-
-
-
 /**
 * @namespace GL
 */
@@ -2239,7 +2238,7 @@ GL.Indexer.prototype = {
 * @param {Number} target gl.ARRAY_BUFFER, ELEMENT_ARRAY_BUFFER
 * @param {ArrayBufferView} data the data in typed-array format
 * @param {number} spacing number of numbers per component (3 per vertex, 2 per uvs...), default 3
-* @param {enum} stream_type default gl.STATIC_DRAW (other: gl.DYNAMIC_DRAW, gl.STREAM_DRAW 
+* @param {enum} stream_type default gl.STATIC_DRAW (other: gl.DYNAMIC_DRAW, gl.STREAM_DRAW
 */
 GL.Buffer = function Buffer( target, data, spacing, stream_type, gl ) {
 	if(GL.debug)
@@ -2321,10 +2320,10 @@ GL.Buffer.prototype.applyTransform = function(mat)
 /**
 * Uploads the buffer data (stored in this.data) to the GPU
 * @method upload
-* @param {number} stream_type default gl.STATIC_DRAW (other: gl.DYNAMIC_DRAW, gl.STREAM_DRAW 
+* @param {number} stream_type default gl.STATIC_DRAW (other: gl.DYNAMIC_DRAW, gl.STREAM_DRAW
 */
 GL.Buffer.prototype.upload = function( stream_type ) { //default gl.STATIC_DRAW (other: gl.DYNAMIC_DRAW, gl.STREAM_DRAW )
-	var spacing = this.spacing || 3; //default spacing	
+	var spacing = this.spacing || 3; //default spacing
 	var gl = this.gl;
 	if(!gl)
 		return;
@@ -2348,7 +2347,7 @@ GL.Buffer.prototype.upload = function( stream_type ) { //default gl.STATIC_DRAW 
 	switch( data.constructor )
 	{
 		case Int8Array: this.buffer.gl_type = gl.BYTE; break;
-		case Uint8ClampedArray: 
+		case Uint8ClampedArray:
 		case Uint8Array: this.buffer.gl_type = gl.UNSIGNED_BYTE; break;
 		case Int16Array: this.buffer.gl_type = gl.SHORT; break;
 		case Uint16Array: this.buffer.gl_type = gl.UNSIGNED_SHORT; break;
@@ -2526,7 +2525,7 @@ global.Mesh = GL.Mesh = function Mesh( vertexbuffers, indexbuffers, options, gl 
 	}
 
 	//used to avoid problems with resources moving between different webgl context
-	this._context_id = gl.context_id; 
+	this._context_id = gl.context_id;
 
 	this.vertexBuffers = {};
 	this.indexBuffers = {};
@@ -2534,7 +2533,7 @@ global.Mesh = GL.Mesh = function Mesh( vertexbuffers, indexbuffers, options, gl 
 	//here you can store extra info, like groups, which is an array of { name, start, length, material }
 	this.info = {
 		groups: []
-	}; 
+	};
 	this._bounding = BBox.create(); //here you can store a AABB in BBox format
 
 	if(vertexbuffers || indexbuffers)
@@ -2552,7 +2551,7 @@ Mesh.common_buffers = {
 	"coords": { spacing:2, attribute: "a_coord"},
 	"coords1": { spacing:2, attribute: "a_coord1"},
 	"coords2": { spacing:2, attribute: "a_coord2"},
-	"colors": { spacing:4, attribute: "a_color"}, 
+	"colors": { spacing:4, attribute: "a_color"},
 	"tangents": { spacing:3, attribute: "a_tangent"},
 	"bone_indices": { spacing:4, attribute: "a_bone_indices", type: Uint8Array },
 	"weights": { spacing:4, attribute: "a_weights"},
@@ -2583,7 +2582,7 @@ Object.defineProperty( Mesh.prototype, "bounding", {
 * Adds buffer to mesh
 * @method addBuffer
 * @param {string} name
-* @param {Buffer} buffer 
+* @param {Buffer} buffer
 */
 
 Mesh.prototype.addBuffer = function(name, buffer)
@@ -2619,9 +2618,9 @@ Mesh.prototype.addBuffers = function( vertexbuffers, indexbuffers, stream_type )
 	for(var i in vertexbuffers)
 	{
 		var data = vertexbuffers[i];
-		if(!data) 
+		if(!data)
 			continue;
-		
+
 		if( data.constructor == GL.Buffer )
 		{
 			data = data.data;
@@ -2657,7 +2656,7 @@ Mesh.prototype.addBuffers = function( vertexbuffers, indexbuffers, stream_type )
 		var attribute = "a_" + i;
 		if(stream_info && stream_info.attribute)
 			attribute = stream_info.attribute;
-	
+
 		if( this.vertexBuffers[i] )
 			this.updateVertexBuffer( i, attribute, spacing, data, stream_type );
 		else
@@ -2744,13 +2743,13 @@ Mesh.prototype.createVertexBuffer = function( name, attribute, buffer_spacing, b
 }
 
 /**
-* Updates a vertex buffer 
+* Updates a vertex buffer
 * @method updateVertexBuffer
 * @param {String} name the name of the buffer
 * @param {String} attribute the name of the attribute in the shader
 * @param {number} spacing number of numbers per component (3 per vertex, 2 per uvs...), default 3
 * @param {*} data the array with all the data
-* @param {enum} stream_type default gl.STATIC_DRAW (other: gl.DYNAMIC_DRAW, gl.STREAM_DRAW 
+* @param {enum} stream_type default gl.STATIC_DRAW (other: gl.DYNAMIC_DRAW, gl.STREAM_DRAW
 */
 Mesh.prototype.updateVertexBuffer = function( name, attribute, buffer_spacing, buffer_data, stream_type ) {
 	var buffer = this.vertexBuffers[name];
@@ -2800,8 +2799,8 @@ Mesh.prototype.getVertexBuffer = function(name)
 /**
 * Creates a new empty index buffer and attachs it to this mesh
 * @method createIndexBuffer
-* @param {String} name 
-* @param {Typed array} data 
+* @param {String} name
+* @param {Typed array} data
 * @param {enum} stream_type gl.STATIC_DRAW, gl.DYNAMIC_DRAW, gl.STREAM_DRAW
 */
 Mesh.prototype.createIndexBuffer = function(name, buffer_data, stream_type) {
@@ -2913,8 +2912,8 @@ Mesh.prototype.bindBuffers = function( shader )
 		var buffer = this.vertexBuffers[ name ];
 		var attribute = buffer.attribute || name;
 		var location = shader.attributes[ attribute ];
-		if (location == null || !buffer.buffer) 
-			continue; 
+		if (location == null || !buffer.buffer)
+			continue;
 		gl.bindBuffer(gl.ARRAY_BUFFER, buffer.buffer);
 		gl.enableVertexAttribArray(location);
 		gl.vertexAttribPointer(location, buffer.buffer.spacing, buffer.buffer.gl_type, false, 0, 0);
@@ -2982,21 +2981,21 @@ Mesh.prototype.toObject = function()
 	for(var i in this.vertexBuffers)
 	{
 		var b = this.vertexBuffers[i];
-		vbs[i] = { 
+		vbs[i] = {
 			spacing: b.spacing,
 			data: new b.data.constructor( b.data ) //clone
-		}; 
+		};
 	}
 	for(var i in this.indexBuffers)
 	{
 		var b = this.indexBuffers[i];
-		ibs[i] = { 
+		ibs[i] = {
 			data: new b.data.constructor( b.data ) //clone
 		}
 	}
 
-	return { 
-		vertexBuffers: vbs, 
+	return {
+		vertexBuffers: vbs,
 		indexBuffers: ibs,
 		info: this.info ? cloneObject( this.info ) : null,
 		bounding: this._bounding.toJSON()
@@ -3010,7 +3009,7 @@ Mesh.prototype.toJSON = function()
 		vertexBuffers: {},
 		indexBuffers: {},
 		info: this.info ? cloneObject( this.info ) : null,
-		bounding: this._bounding.toJSON() 
+		bounding: this._bounding.toJSON()
 	};
 
 	for(var i in this.vertexBuffers)
@@ -3127,7 +3126,7 @@ Mesh.prototype.draw = function(shader, mode, range_start, range_length)
 */
 
 /**
-* Creates a new index stream with wireframe 
+* Creates a new index stream with wireframe
 * @method computeWireframe
 */
 Mesh.prototype.computeWireframe = function() {
@@ -3297,11 +3296,11 @@ Mesh.prototype.computeIndices = function() {
 	this.vertexBuffers = {}; //erase all
 
 	//new buffers
-	this.createVertexBuffer( 'vertices', GL.Mesh.common_buffers["vertices"].attribute, 3, linearizeArray( new_vertices ) );	
+	this.createVertexBuffer( 'vertices', GL.Mesh.common_buffers["vertices"].attribute, 3, linearizeArray( new_vertices ) );
 	if(old_normals_data)
-		this.createVertexBuffer( 'normals', GL.Mesh.common_buffers["normals"].attribute, 3, linearizeArray( new_normals ) );	
+		this.createVertexBuffer( 'normals', GL.Mesh.common_buffers["normals"].attribute, 3, linearizeArray( new_normals ) );
 	if(old_coords_data)
-		this.createVertexBuffer( 'coords', GL.Mesh.common_buffers["coords"].attribute, 2, linearizeArray( new_coords ) );	
+		this.createVertexBuffer( 'coords', GL.Mesh.common_buffers["coords"].attribute, 2, linearizeArray( new_coords ) );
 
 	this.createIndexBuffer( "triangles", indices );
 }
@@ -3376,20 +3375,20 @@ Mesh.prototype.explodeIndices = function( buffer_name ) {
 	}
 
 	//erase all
-	this.vertexBuffers = {}; 
+	this.vertexBuffers = {};
 
 	//new buffers
-	this.createVertexBuffer( 'vertices', GL.Mesh.common_buffers["vertices"].attribute, 3, new_vertices );	
+	this.createVertexBuffer( 'vertices', GL.Mesh.common_buffers["vertices"].attribute, 3, new_vertices );
 	if(new_normals)
-		this.createVertexBuffer( 'normals', GL.Mesh.common_buffers["normals"].attribute, 3, new_normals );	
+		this.createVertexBuffer( 'normals', GL.Mesh.common_buffers["normals"].attribute, 3, new_normals );
 	if(new_coords)
-		this.createVertexBuffer( 'coords', GL.Mesh.common_buffers["coords"].attribute, 2, new_coords );	
+		this.createVertexBuffer( 'coords', GL.Mesh.common_buffers["coords"].attribute, 2, new_coords );
 	*/
 
 	for(var i in new_buffers)
 	{
 		var old = this.vertexBuffers[i];
-		this.createVertexBuffer( i, old.attribute, old.spacing, new_buffers[i] );	
+		this.createVertexBuffer( i, old.attribute, old.spacing, new_buffers[i] );
 	}
 
 	delete this.indexBuffers[ buffer_name ];
@@ -3515,7 +3514,7 @@ Mesh.prototype.computeTangents = function()
 	var num_vertices = vertices.length / 3;
 
 	var tangents = new Float32Array(num_vertices * 4);
-	
+
 	//temporary (shared)
 	var tan1 = new Float32Array(num_vertices*3*2);
 	var tan2 = tan1.subarray(num_vertices*3);
@@ -3827,6 +3826,9 @@ Mesh.prototype.computeGroupsBoundingBoxes = function()
 		return false;
 
 	var groups = this.info.groups;
+	if(!groups)
+		return;
+
 	for(var i = 0; i < groups.length; ++i)
 	{
 		var group = groups[i];
@@ -3862,7 +3864,7 @@ Mesh.prototype.computeGroupsBoundingBoxes = function()
 * @param {vec3} half_size vector from the center to positive corner
 */
 Mesh.prototype.setBoundingBox = function( center, half_size ) {
-	BBox.setCenterHalfsize( this._bounding, center, half_size );	
+	BBox.setCenterHalfsize( this._bounding, center, half_size );
 }
 
 
@@ -3901,7 +3903,7 @@ Mesh.prototype.configure = function( o, options )
 				vertex_buffers[i] = o[j][i];
 			continue;
 		}
-		
+
 		if(j == "indexBuffers" || j == "index_buffers")
 		{
 			for(i in o[j])
@@ -3922,7 +3924,7 @@ Mesh.prototype.configure = function( o, options )
 	this.addBuffers( vertex_buffers, index_buffers, options.stream_type );
 
 	for(var i in options)
-		this[i] = options[i];		
+		this[i] = options[i];
 
 	if(!options.bounding)
 		this.updateBoundingBox();
@@ -4049,7 +4051,7 @@ Mesh.prototype.simplify = function()
 	//search for repeated vertices
 		//compute the average normal and coord
 	//reindex the triangles
-	//return simplified mesh	
+	//return simplified mesh
 }
 
 /**
@@ -4220,10 +4222,10 @@ Mesh.mergeMeshes = function( meshes, options )
 	//return
 	if( typeof(gl) != "undefined" || options.only_data )
 		return new GL.Mesh( vertex_buffers,index_buffers, extra );
-	return { 
-		vertexBuffers: vertex_buffers, 
-		indexBuffers: index_buffers, 
-		info: { groups: groups } 
+	return {
+		vertexBuffers: vertex_buffers,
+		indexBuffers: index_buffers,
+		info: { groups: groups }
 	};
 }
 
@@ -4245,19 +4247,21 @@ Mesh.fromURL = function(url, on_complete, gl, options)
 {
 	options = options || {};
 	gl = gl || global.gl;
-	
+
 	var mesh = new GL.Mesh(undefined,undefined,undefined,gl);
 	mesh.ready = false;
 
 	var pos = url.lastIndexOf(".");
 	var extension = url.substr(pos+1).toLowerCase();
+	if(options.extension)
+		extension = options.extension;
 	options.binary = Mesh.binary_file_formats[ extension ];
 
 	HttpRequest( url, null, function(data) {
-		mesh.parse( data, extension );
+		mesh.parse( data, extension, options );
 		delete mesh["ready"];
 		if(on_complete)
-			on_complete.call(mesh,mesh, url);
+			on_complete.call(mesh, mesh, url);
 	}, function(err){
 		if(on_complete)
 			on_complete(null);
@@ -4273,12 +4277,14 @@ Mesh.fromURL = function(url, on_complete, gl, options)
 * @param {String} format parser file format name (p.e. "obj")
 * @return {?} depending on the parser
 */
-Mesh.prototype.parse = function( data, format )
+Mesh.prototype.parse = function( data, format, options )
 {
+	options = options || {};
+	options.mesh = this;
 	format = format.toLowerCase();
 	var parser = GL.Mesh.parsers[ format ];
 	if(parser)
-		return parser.call(null, data, {mesh: this});
+		return parser.call(null, data, options);
 	throw("GL.Mesh.parse: no parser found for format " + format );
 }
 
@@ -4360,7 +4366,7 @@ function DynamicMesh( size, normals, coords, colors, gl )
 	}
 
 	//used to avoid problems with resources moving between different webgl context
-	this._context_id = gl.context_id; 
+	this._context_id = gl.context_id;
 
 	this.vertexBuffers = {};
 	this.indexBuffers = {};
@@ -4368,7 +4374,7 @@ function DynamicMesh( size, normals, coords, colors, gl )
 	//here you can store extra info, like groups, which is an array of { name, start, length, material }
 	this.info = {
 		groups: []
-	}; 
+	};
 	this._bounding = BBox.create(); //here you can store a AABB in BBox format
 
 	this.resize( size );
@@ -4471,7 +4477,7 @@ Mesh.plane = function(options, gl) {
 	var normals = [];
 
 	var N = vec3.fromValues(0,0,1);
-	if(xz) 
+	if(xz)
 		N.set([0,1,0]);
 
 	for (var y = 0; y <= detailY; y++) {
@@ -4523,7 +4529,7 @@ Mesh.plane2D = function(options, gl) {
 };
 
 /**
-* Returns a point mesh 
+* Returns a point mesh
 * @method Mesh.point
 * @param {Object} options no options
 */
@@ -4532,9 +4538,9 @@ Mesh.point = function(options) {
 }
 
 /**
-* Returns a cube mesh 
+* Returns a cube mesh
 * @method Mesh.cube
-* @param {Object} options valid options: size 
+* @param {Object} options valid options: size
 */
 Mesh.cube = function(options, gl) {
 	options = options || {};
@@ -4576,7 +4582,7 @@ Mesh.box = function(options, gl) {
 	//[[-1,1,-1],[-1,-1,+1],[-1,1,1],[-1,1,-1],[-1,-1,-1],[-1,-1,+1],[1,1,-1],[1,1,1],[1,-1,+1],[1,1,-1],[1,-1,+1],[1,-1,-1],[-1,1,1],[1,-1,1],[1,1,1],[-1,1,1],[-1,-1,1],[1,-1,1],[-1,1,-1],[1,1,-1],[1,-1,-1],[-1,1,-1],[1,-1,-1],[-1,-1,-1],[-1,1,-1],[1,1,1],[1,1,-1],[-1,1,-1],[-1,1,1],[1,1,1],[-1,-1,-1],[1,-1,-1],[1,-1,1],[-1,-1,-1],[1,-1,1],[-1,-1,1]]
 	buffers.vertices = new Float32Array([-1,1,-1,-1,-1,+1,-1,1,1,-1,1,-1,-1,-1,-1,-1,-1,+1,1,1,-1,1,1,1,1,-1,+1,1,1,-1,1,-1,+1,1,-1,-1,-1,1,1,1,-1,1,1,1,1,-1,1,1,-1,-1,1,1,-1,1,-1,1,-1,1,1,-1,1,-1,-1,-1,1,-1,1,-1,-1,-1,-1,-1,-1,1,-1,1,1,1,1,1,-1,-1,1,-1,-1,1,1,1,1,1,-1,-1,-1,1,-1,-1,1,-1,1,-1,-1,-1,1,-1,1,-1,-1,1]);
 	//for(var i in options.vertices) for(var j in options.vertices[i]) options.vertices[i][j] *= size;
-	for(var i = 0, l = buffers.vertices.length; i < l; i+=3) 
+	for(var i = 0, l = buffers.vertices.length; i < l; i+=3)
 	{
 		buffers.vertices[i] *= sizex;
 		buffers.vertices[i+1] *= sizey;
@@ -4597,7 +4603,7 @@ Mesh.box = function(options, gl) {
 }
 
 /**
-* Returns a circle mesh 
+* Returns a circle mesh
 * @method Mesh.circle
 * @param {Object} options valid options: size,radius, xz = in xz plane, otherwise xy plane
 */
@@ -4707,9 +4713,114 @@ Mesh.circle = function( options, gl ) {
 }
 
 /**
-* Returns a cube mesh 
+* Returns a ring mesh
+* @method Mesh.ring
+* @param {Object} options valid options: radius, thickness, xz = in xz plane, otherwise xy plane
+*/
+Mesh.ring = function( options, gl ) {
+	options = options || {};
+	var size = options.size || options.radius || 1;
+	var thickness = options.thickness || size * 0.1;
+	var slices = Math.ceil(options.slices || 24);
+	var xz = options.xz || false;
+	var empty = options.empty || false;
+	if(slices < 3) slices = 3;
+	var delta = (2 * Math.PI) / slices;
+
+	var center = vec3.create();
+	var A = vec3.create();
+	var B = vec3.create();
+	var N = vec3.fromValues(0,0,1);
+	var uv_center = vec2.fromValues(0.5,0.5);
+	var uv = vec2.create();
+
+	if(xz) N.set([0,1,0]);
+
+	var index = xz ? 2 : 1;
+
+	var vertices = new Float32Array(3 * (slices * 2 + 2));
+	var normals = new Float32Array(3 * (slices * 2 + 2));
+	var coords = new Float32Array(2 * (slices * 2 + 2));
+	var triangles = null;
+
+	var sin = 0;
+	var cos = 0;
+
+	//compute vertices
+	for(var i = 0; i <= slices; ++i )
+	{
+		sin = Math.sin( delta * i );
+		cos = Math.cos( delta * i );
+
+		A[0] = sin * (size - thickness);
+		A[index] = cos * (size - thickness);
+		uv[0] = i/slices;
+		uv[1] = 0;
+		vertices.set(A, i * 6);
+		normals.set(N, i * 6);
+		coords.set(uv, i * 4);
+
+		B[0] = sin * (size + thickness);
+		B[index] = cos * (size + thickness);
+		uv[1] = 1;
+		vertices.set(B, i * 6+3);
+		normals.set(N, i * 6+3);
+		coords.set(uv, i * 4+2);
+	}
+
+	if(empty)
+	{
+		vertices = vertices.subarray(3);
+		normals = vertices.subarray(3);
+		coords = vertices.subarray(2);
+		triangles = null;
+	}
+	else
+	{
+		var triangles = new Uint16Array(6 * slices);
+		var offset = 2;
+		var offset2 = 1;
+		if(xz)
+		{
+			offset = 1;
+			offset2 = 2;
+		}
+
+		//compute indices
+		for(var i = 0; i < slices; ++i )
+		{
+			triangles[i*6] = i*2;
+			triangles[i*6+1] = i*2+offset;
+			triangles[i*6+2] = i*2+offset2;
+			triangles[i*6+3] = i*2+offset2;
+			triangles[i*6+4] = i*2+offset;
+			triangles[i*6+5] = i*2+3;
+		}
+	}
+
+	options.bounding = BBox.fromCenterHalfsize( [0,0,0], xz ? [size+thickness,0,size+thickness] : [size+thickness,size+thickness,0] );
+
+	var buffers = {vertices: vertices, normals: normals, coords: coords, triangles: triangles};
+
+	if(options.wireframe)
+	{
+		var wireframe = new Uint16Array(slices*4);
+		for(var i = 0; i < slices; i++)
+		{
+			wireframe[i*4] = i*2;
+			wireframe[i*4+1] = i*2+2;
+			wireframe[i*4+2] = i*2+1;
+			wireframe[i*4+3] = i*2+3;
+		}
+		buffers.wireframe = wireframe;
+	}
+	return GL.Mesh.load( buffers, options, gl );
+}
+
+/**
+* Returns a cube mesh
 * @method Mesh.cylinder
-* @param {Object} options valid options: radius, height, subdivisions 
+* @param {Object} options valid options: radius, height, subdivisions
 */
 Mesh.cylinder = function( options, gl ) {
 	options = options || {};
@@ -4795,7 +4906,7 @@ Mesh.cylinder = function( options, gl ) {
 			vertices.set( top_center, pos + i*6*3 + 6 );
 			normals.set(up, pos + i*6*3 + 6);
 			coords.set([0.5,0.5], pos_uv + i*6*2 + 4);
-			
+
 			//bottom
 			vertices.set([ uv2[0]*radius, height*-0.5, uv2[2]*radius], pos + i*6*3 + 9);
 			normals.set(down, pos + i*6*3 + 9);
@@ -4829,9 +4940,9 @@ Mesh.cylinder = function( options, gl ) {
 }
 
 /**
-* Returns a cone mesh 
+* Returns a cone mesh
 * @method Mesh.cone
-* @param {Object} options valid options: radius, height, subdivisions 
+* @param {Object} options valid options: radius, height, subdivisions
 */
 Mesh.cone = function( options, gl ) {
 	options = options || {};
@@ -4910,8 +5021,111 @@ Mesh.cone = function( options, gl ) {
 	return Mesh.load( buffers, options, gl );
 }
 
+
+
 /**
-* Returns a sphere mesh 
+* Returns a torus mesh (warning, it reuses vertices in the last loop so UVs will be messed up, sorry)
+* @method Mesh.torus
+* @param {Object} options valid options: innerradius, outerradius, innerslices, outerslices
+*/
+Mesh.torus = function( options, gl ) {
+	options = options || {};
+	var outerradius = options.outerradius || options.radius || 1;
+	var outerslices = Math.ceil(options.outerslices || options.slices || 24);
+	var innerradius = options.innerradius || outerradius * 0.1;
+	var innerslices = Math.ceil(options.innerslices || outerslices );
+	var angle = options.angle || (Math.PI * 2);
+
+	var innerdelta = Math.PI * 2 / innerslices;
+	var outerdelta = angle / outerslices;
+	var xz = false;
+	var index = xz ? 2 : 1;
+
+	var center = vec3.create();
+	var A = vec3.create();
+	var N = vec3.fromValues(0,0,1);
+	var uv_center = vec2.fromValues(0.5,0.5);
+	var uv = vec2.create();
+	var close = angle == (Math.PI * 2);
+
+	//circle vertices
+	var cvertices = new Float32Array(3 * innerslices);
+	var cnormals = new Float32Array(3 * innerslices);
+
+	var sin = 0;
+	var cos = 0;
+	//compute circle vertices
+	for(var i = 0; i < innerslices; ++i )
+	{
+		sin = Math.sin( innerdelta * i );
+		cos = Math.cos( innerdelta * i );
+		A[0] = sin * innerradius;
+		A[index] = cos * innerradius;
+		uv[0] = sin * 0.5 + 0.5;
+		uv[1] = cos * 0.5 + 0.5;
+		cvertices.set(A, i * 3);
+		vec3.normalize(N,A);
+		cnormals.set(N, i * 3);
+	}
+
+	var vertices = new Float32Array(3 * outerslices * innerslices);
+	var normals = new Float32Array(3 * outerslices * innerslices);
+	var coords = new Float32Array(2 * outerslices * innerslices);
+	var triangles = null;
+
+	var sin = 0;
+	var cos = 0;
+
+	var M = mat4.create();
+	var offset = vec3.fromValues(-outerradius,0,0);
+	var axis = vec3.fromValues(0,1,0);
+	var v = vec3.create();
+
+	var triangles = [];
+	var next = innerslices;
+
+	//compute vertices
+	for(var i = 0; i < outerslices; ++i )
+	{
+		mat4.identity(M);
+		mat4.rotate( M, M, i * outerdelta, axis );
+		mat4.translate( M, M, offset );
+
+		var bindex = i * innerslices;
+		var next = innerslices;
+		if(i >= outerslices - 1 )
+		{
+			next = (outerslices - 1) * -innerslices;
+			if(!close) 	next = 0;
+		}
+
+		for(var j = 0; j < innerslices; ++j )
+		{
+			var cv = cvertices.subarray(j*3,j*3+3);
+			var cn = cnormals.subarray(j*3,j*3+3);
+			mat4.multiplyVec3( A, M, cv );
+			mat4.rotateVec3( N, M, cn );
+			vertices.set(A, j * 3 + i * 3 * innerslices);
+			normals.set(N, j * 3 + i * 3 * innerslices);
+			coords.set([i/outerslices,j/innerslices], j * 2 + i * 2 * innerslices);
+
+			var a = bindex + j;
+			var b = bindex + (j + 1) % innerslices;
+			triangles.push( b,a,a+next,b,a+next,b+next );
+			//else
+			//	triangles.push( i,i+1,i+next, i,i+next,i+next+1 );
+		}
+	}
+
+	var size = innerradius + outerradius;
+	options.bounding = BBox.fromCenterHalfsize( [0,0,0], xz ? [size,innerradius,size] : [size,size,innerradius] );
+	var buffers = {vertices: vertices, normals: normals, coords: coords, triangles: triangles};
+	return GL.Mesh.load( buffers, options, gl );
+}
+
+
+/**
+* Returns a sphere mesh
 * @method Mesh.sphere
 * @param {Object} options valid options: radius, lat, long, subdivisions, hemi
 */
@@ -5016,7 +5230,7 @@ Mesh.grid = function( options, gl )
 {
 	options = options || {};
 	var num_lines = options.lines || 11;
-	if(num_lines < 0) 
+	if(num_lines < 0)
 		num_lines = 1;
 	var size = options.size || 10;
 
@@ -5130,6 +5344,132 @@ Mesh.icosahedron = function( options, gl ) {
 
 	return new GL.Mesh.load({vertices: vertices, coords: coords, normals: normals, triangles: indices},options,gl);
 }
+
+/**
+* Returns a closed shape from a 2D closed line, it can be extruded!
+* @method Mesh.shape
+* @param {Object} options valid options: extrude, xy
+*/
+Mesh.shape = function( line, options, gl ) {
+	options = options || {};
+	if(typeof(earcut) === "undefined")
+		throw("To use GL.Mesh.shape you must download and include earcut.js (do not link it directly!): https://raw.githubusercontent.com/mapbox/earcut/master/src/earcut.js");
+	if(!line || !line.length || line.length % 2 == 1)
+		throw("GL.Mesh.shape line missing, must be an array of 2D vertices");
+	var ext = options.extrude || 0;
+	if(line[0].constructor === Array)
+		line = earcut.flatten( line );
+	var triangulation = earcut( line ).reverse();
+	console.log(triangulation);
+	var vertices = [];
+	var normals = [];
+	var uvs = [];
+
+	//bounding
+	var minmaxX = [line[0],line[1]];
+	var minmaxY = [line[0],line[1]];
+	for(var i = 0; i < line.length; i+=2)
+	{
+		minmaxX[0] = Math.min(minmaxX[0],line[i]);
+		minmaxX[1] = Math.max(minmaxX[1],line[i]);
+		minmaxY[0] = Math.min(minmaxY[0],line[i+1]);
+		minmaxY[1] = Math.max(minmaxY[1],line[i+1]);
+	}
+	var rangeX = minmaxX[1] - minmaxX[0];
+	var rangeY = minmaxY[1] - minmaxY[0];
+	var groups = [];
+	var indices = null;
+	if(ext)
+	{
+		indices = [];
+		var N = vec3.create();
+		//side
+		var num = line.length;
+		for(var i = 0; i < line.length; i+=2)
+		{
+			var x = line[i];
+			var y = line[i+1];
+			var x2 = line[(i+2)%num];
+			var y2 = line[(i+3)%num];
+			var A = vertices.length/3;
+			vertices.push(x,ext*0.5,y); //top
+			vertices.push(x,ext*-0.5,y); //bottom
+			vertices.push(x2,ext*0.5,y2); //top next
+			vertices.push(x2,ext*-0.5,y2); //bottom next
+			vec3.normalize(N,vec3.cross(N,[0,1,0],[x2-x,0,y2-y]));
+			normals.push(N[0],N[1],N[2],N[0],N[1],N[2],N[0],N[1],N[2],N[0],N[1],N[2]);
+			var u = (x - minmaxX[0]) / rangeX;
+			var v = (y - minmaxY[0]) / rangeY;
+			var u2 = (x2 - minmaxX[0]) / rangeX;
+			var v2 = (y2 - minmaxY[0]) / rangeY;
+			uvs.push(u,v,u,v,u2,v2,u2,v2);
+			indices.push(A,A+2,A+1,A+2,A+3,A+1);
+		}
+		groups.push({name:"side",start:0,length:indices.length});
+
+		//caps
+		var offset = vertices.length / 3;
+		var start = indices.length;
+		for(var i = 0; i < line.length; i+=2)
+		{
+			var x = line[i];
+			var y = line[i+1];
+			var u = (x - minmaxX[0]) / rangeX;
+			var v = (y - minmaxY[0]) / rangeY;
+			vertices.push(x,ext*0.5,y); //top
+			vertices.push(x,ext*-0.5,y); //bottom
+			normals.push(0,1,0,0,-1,0);
+			uvs.push(u,v,u,v);
+		}
+
+		for(var i = 0; i < triangulation.length; i+=3)
+		{
+			indices.push(offset+triangulation[i]*2,offset+triangulation[i+1]*2,offset+triangulation[i+2]*2);
+			indices.push(offset+triangulation[i]*2+1,offset+triangulation[i+2]*2+1,offset+triangulation[i+1]*2+1);
+		}
+		groups.push({name:"caps",start:start,length:indices.length});
+
+		options.bounding = BBox.fromCenterHalfsize( [(minmaxX[0]+minmaxX[1])*0.5,0,(minmaxY[0]+minmaxY[1])*0.5], [rangeX*0.5,ext*0.5,rangeY*0.5], vec2.len([rangeX*0.5,ext*0.5,rangeY*0.5]) );
+	}
+	else //flat
+	{
+		//cap
+		for(var i = 0; i < line.length; i+=2)
+		{
+			vertices.push(line[i],0,line[i+1]);
+			normals.push(0,1,0);
+			uvs.push( (line[i] - minmaxX[0]) / rangeX,(line[i+1] - minmaxY[0]) / rangeY );
+		}
+		indices = triangulation;
+		groups.push({name:"side",start:0,length:indices.length});
+		options.bounding = BBox.fromCenterHalfsize( [(minmaxX[0]+minmaxX[1])*0.5,0,(minmaxY[0]+minmaxY[1])*0.5], [rangeX*0.5,0,rangeY*0.5], vec2.len([rangeX*0.5,0,rangeY*0.5]) );
+	}
+
+	if(options.xy)
+	{
+		for(var i = 0; i < vertices.length; i+=3)
+		{
+			swap( vertices, i);
+			swap( normals, i);
+		}
+		if(ext)
+			options.bounding = BBox.fromCenterHalfsize( [(minmaxX[0]+minmaxX[1])*0.5,(minmaxY[0]+minmaxY[1])*0.5,0], [rangeX*0.5,rangeY*0.5,ext*0.5], vec2.len([rangeX*0.5,rangeY*0.5,ext*0.5]) );
+		else
+			options.bounding = BBox.fromCenterHalfsize( [(minmaxX[0]+minmaxX[1])*0.5,(minmaxY[0]+minmaxY[1])*0.5,0], [rangeX*0.5,rangeY*0.5,0], vec2.len([rangeX*0.5,rangeY*0.5,0]) );
+	}
+
+	options.info = { groups: groups };
+
+	return new GL.Mesh.load({vertices: vertices, coords: uvs, normals: normals, triangles: indices},options,gl);
+
+	function swap(v,pos)
+	{
+		var tmp = v[pos+1];
+		v[pos+1] = v[pos+2];
+		v[pos+2] = -tmp;
+	}
+}
+
 /**
 * @namespace GL
 */
@@ -5165,10 +5505,10 @@ global.Texture = GL.Texture = function Texture( width, height, options, gl ) {
 	//used to avoid problems with resources moving between different webgl context
 	gl = gl || global.gl;
 	this.gl = gl;
-	this._context_id = gl.context_id; 
+	this._context_id = gl.context_id;
 
 	//round sizes
-	width = parseInt(width); 
+	width = parseInt(width);
 	height = parseInt(height);
 
 	if(GL.debug)
@@ -5181,14 +5521,14 @@ global.Texture = GL.Texture = function Texture( width, height, options, gl ) {
 	this.width = width;
 	this.height = height;
 	if(options.depth) //for texture_3d
-		this.depth = options.depth; 
+		this.depth = options.depth;
 	this.texture_type = options.texture_type || gl.TEXTURE_2D; //or gl.TEXTURE_CUBE_MAP
 	this.format = options.format || Texture.DEFAULT_FORMAT; //gl.RGBA (if gl.DEPTH_COMPONENT remember type: gl.UNSIGNED_SHORT)
 	this.internalFormat = options.internalFormat; //LUMINANCE, and weird formats with bits
 	this.type = options.type || Texture.DEFAULT_TYPE; //gl.UNSIGNED_BYTE, gl.UNSIGNED_SHORT, gl.FLOAT or gl.HALF_FLOAT_OES (or gl.HIGH_PRECISION_FORMAT which could be half or float)
 	this.magFilter = options.magFilter || options.filter || Texture.DEFAULT_MAG_FILTER;
 	this.minFilter = options.minFilter || options.filter || Texture.DEFAULT_MIN_FILTER;
-	this.wrapS = options.wrap || options.wrapS || Texture.DEFAULT_WRAP_S; 
+	this.wrapS = options.wrap || options.wrapS || Texture.DEFAULT_WRAP_S;
 	this.wrapT = options.wrap || options.wrapT || Texture.DEFAULT_WRAP_T;
 	this.data = null; //where the data came from
 
@@ -5254,7 +5594,7 @@ global.Texture = GL.Texture = function Texture( width, height, options, gl ) {
 			if(pixel_data[0].constructor === Number) //special case, specify just one face and copy it
 			{
 				pixel_data = toTypedArray( pixel_data );
-				pixel_data = [pixel_data,pixel_data,pixel_data,pixel_data,pixel_data,pixel_data]; 
+				pixel_data = [pixel_data,pixel_data,pixel_data,pixel_data,pixel_data,pixel_data];
 			}
 			else
 				for(var i = 0; i < pixel_data.length; ++i)
@@ -5276,9 +5616,10 @@ global.Texture = GL.Texture = function Texture( width, height, options, gl ) {
 		return new Uint8Array( data );
 	}
 
-	//gl.TEXTURE_1D is not supported by WebGL...
+	Texture.setUploadOptions(options);
 
 	//here we create all **********************************
+	//gl.TEXTURE_1D is not supported by WebGL...
 	if(this.texture_type == GL.TEXTURE_2D)
 	{
 		//create the texture
@@ -5335,7 +5676,7 @@ Texture.prototype.computeInternalFormat = function()
 	{
 		this.minFilter = this.magFilter = GL.NEAREST;
 
-		if( gl.webgl_version == 2 ) 
+		if( gl.webgl_version == 2 )
 		{
 			if( this.type == GL.UNSIGNED_SHORT )
 				this.internalFormat = GL.DEPTH_COMPONENT16;
@@ -5343,7 +5684,7 @@ Texture.prototype.computeInternalFormat = function()
 				this.internalFormat = GL.DEPTH_COMPONENT24;
 			else if( this.type == GL.FLOAT )
 				this.internalFormat = GL.DEPTH_COMPONENT32F;
-			else 
+			else
 				throw("unsupported type for a depth texture");
 		}
 		else if( gl.webgl_version == 1 )
@@ -5355,7 +5696,7 @@ Texture.prototype.computeInternalFormat = function()
 	}
 	else if( this.format == gl.RGBA )
 	{
-		if( gl.webgl_version == 2 ) 
+		if( gl.webgl_version == 2 )
 		{
 			if( this.type == GL.FLOAT )
 				this.internalFormat = GL.RGBA32F;
@@ -5420,7 +5761,7 @@ Texture.prototype.hasSameProperties = function(t)
 {
 	if(!t)
 		return false;
-	return t.width == this.width && 
+	return t.width == this.width &&
 		t.height == this.height &&
 		t.type == this.type &&
 		t.format == this.format &&
@@ -5470,7 +5811,7 @@ Texture.prototype.bind = function( unit ) {
 }
 
 /**
-* Unbinds the texture 
+* Unbinds the texture
 * @method unbind
 * @param {number} unit texture unit
 * @return {number} returns the texture unit
@@ -5497,7 +5838,7 @@ Texture.prototype.setParameter = function(param,value) {
 }
 
 /**
-* Unbinds the texture 
+* Unbinds the texture
 * @method Texture.setUploadOptions
 * @param {Object} options a list of options to upload the texture
 * - premultiply_alpha : multiply the color by the alpha value, default FALSE
@@ -5576,7 +5917,7 @@ Texture.prototype.uploadData = function( data, options, skip_mipmaps )
 	var mipmap_level = options.mipmap_level || 0;
 	var width = this.width;
 	var height = this.height;
-	width = width >> mipmap_level; 
+	width = width >> mipmap_level;
 	height = height >> mipmap_level;
 	var internal_format = this.internalFormat || this.format;
 
@@ -5695,7 +6036,7 @@ Texture.prototype.drawTo = function(callback, params)
 			renderbuffer.height = this.height;
 			gl.bindRenderbuffer( gl.RENDERBUFFER, renderbuffer );
 
-			//destroy after one minute 
+			//destroy after one minute
 			setTimeout( inner_check_destroy.bind(renderbuffer), 1000*60 );
 		}
 	}
@@ -5793,13 +6134,7 @@ Texture.prototype.drawTo = function(callback, params)
 	return this;
 }
 
-/**
-* Static version of drawTo meant to be used with several buffers
-* @method drawToColorAndDepth
-* @param {Texture} color_texture
-* @param {Texture} depth_texture
-* @param {Function} callback
-*/
+/*
 Texture.drawTo = function( color_textures, callback, depth_texture )
 {
 	var w = -1,
@@ -5814,11 +6149,11 @@ Texture.drawTo = function( color_textures, callback, depth_texture )
 		for(var i = 0; i < color_textures.length; i++)
 		{
 			var t = color_textures[i];
-			if(w == -1) 
+			if(w == -1)
 				w = t.width;
 			else if(w != t.width)
 				throw("Cannot use Texture.drawTo if textures have different dimensions");
-			if(h == -1) 
+			if(h == -1)
 				h = t.height;
 			else if(h != t.height)
 				throw("Cannot use Texture.drawTo if textures have different dimensions");
@@ -5905,13 +6240,6 @@ Texture.drawTo = function( color_textures, callback, depth_texture )
 	gl.viewport(v[0], v[1], v[2], v[3]);
 }
 
-/**
-* Similar to drawTo but it also stores the depth in a depth texture
-* @method drawToColorAndDepth
-* @param {Texture} color_texture
-* @param {Texture} depth_texture
-* @param {Function} callback
-*/
 Texture.drawToColorAndDepth = function( color_texture, depth_texture, callback ) {
 	var gl = color_texture.gl; //static function
 
@@ -5938,7 +6266,7 @@ Texture.drawToColorAndDepth = function( color_texture, depth_texture, callback )
 
 	gl.viewport(v[0], v[1], v[2], v[3]);
 }
-
+*/
 
 
 /**
@@ -5957,7 +6285,7 @@ Texture.prototype.copyTo = function( target_texture, shader, uniforms ) {
 
 	//save state
 	var previous_fbo = gl.getParameter( gl.FRAMEBUFFER_BINDING );
-	var viewport = gl.getViewport(); 
+	var viewport = gl.getViewport();
 
 	if(!shader)
 		shader = this.texture_type == gl.TEXTURE_2D ? GL.Shader.getScreenShader() : GL.Shader.getCubemapCopyShader();
@@ -5999,7 +6327,7 @@ Texture.prototype.copyTo = function( target_texture, shader, uniforms ) {
 			var color_renderbuffer = gl._color_renderbuffer = gl._color_renderbuffer || gl.createRenderbuffer();
 			var w = color_renderbuffer.width = target_texture.width;
 			var h = color_renderbuffer.height = target_texture.height;
-			
+
 			//attach color render buffer
 			gl.bindRenderbuffer( gl.RENDERBUFFER, color_renderbuffer );
 			gl.renderbufferStorage( gl.RENDERBUFFER, gl.RGBA4, w, h );
@@ -6009,7 +6337,7 @@ Texture.prototype.copyTo = function( target_texture, shader, uniforms ) {
 			var attachment_point = target_texture.format == gl.DEPTH_STENCIL ? gl.DEPTH_STENCIL_ATTACHMENT : gl.DEPTH_ATTACHMENT;
 			gl.framebufferTexture2D( gl.FRAMEBUFFER, attachment_point, gl.TEXTURE_2D, target_texture.handler, 0);
 
-			var complete = gl.checkFramebufferStatus( gl.FRAMEBUFFER );
+			var complete = gl.checkFramebufferStatus( gl.FRAMEBUFFER ); //this line is slow according to Mozilla?
 			if(complete !== gl.FRAMEBUFFER_COMPLETE)
 				throw("FBO not complete: " + complete);
 
@@ -6043,7 +6371,7 @@ Texture.prototype.copyTo = function( target_texture, shader, uniforms ) {
 			this.toViewport( shader,{ u_rotation: rot_matrix });
 		}
 	}
-	
+
 	//restore previous state
 	gl.setViewport(viewport); //restore viewport
 	gl.bindFramebuffer( gl.FRAMEBUFFER, previous_fbo ); //restore fbo
@@ -6068,9 +6396,9 @@ Texture.prototype.copyTo = function( target_texture, shader, uniforms ) {
 * @param {GL.Shader} [shader=null] optional shader to apply while copying
 * @param {Object} [uniforms=null] optional uniforms for the shader
 */
-Texture.prototype.blit = (function(){ 
-	var viewport = new Float32Array(4);	
-	
+Texture.prototype.blit = (function(){
+	var viewport = new Float32Array(4);
+
 	return function( target_texture, shader, uniforms ) {
 		var that = this;
 		var gl = this.gl;
@@ -6080,7 +6408,7 @@ Texture.prototype.blit = (function(){
 
 		//save state
 		var previous_fbo = gl.getParameter( gl.FRAMEBUFFER_BINDING );
-		viewport.set( gl.viewport_data ); 
+		viewport.set( gl.viewport_data );
 
 		shader = shader || GL.Shader.getScreenShader();
 		if(shader && uniforms)
@@ -6097,7 +6425,7 @@ Texture.prototype.blit = (function(){
 
 		this.bind(0);
 		shader.draw( GL.Mesh.getScreenQuad(), gl.TRIANGLES );
-		
+
 		//restore previous state
 		gl.setViewport(viewport); //restore viewport
 		gl.bindFramebuffer( gl.FRAMEBUFFER, previous_fbo ); //restore fbo
@@ -6126,19 +6454,30 @@ Texture.prototype.toViewport = function(shader, uniforms)
 }
 
 /**
-* Fills the texture with a constant color (uses gl.clear)
+* Fills the texture with a constant color (uses gl.clear) or shader
 * @method fill
-* @param {vec4} color rgba
+* @param {vec4|GL.Shader} color rgba or shader
 * @param {boolean} skip_mipmaps if true the mipmaps wont be updated
 */
-Texture.prototype.fill = function(color, skip_mipmaps )
+Texture.prototype.fill = function(color_or_shader, skip_mipmaps )
 {
-	var old_color = gl.getParameter( gl.COLOR_CLEAR_VALUE );
-	gl.clearColor( color[0], color[1], color[2], color[3] );
-	this.drawTo( function() {
-		gl.clear( gl.COLOR_BUFFER_BIT );	
-	});
-	gl.clearColor( old_color[0], old_color[1], old_color[2], old_color[3] );
+	if(color_or_shader.constructor === GL.Shader)
+	{
+		var shader = color_or_shader;
+		this.drawTo( function() {
+			shader.toViewport();
+		});
+	}
+	else
+	{
+		var color = color_or_shader;
+		var old_color = gl.getParameter( gl.COLOR_CLEAR_VALUE );
+		gl.clearColor( color[0], color[1], color[2], color[3] );
+		this.drawTo( function() {
+			gl.clear( gl.COLOR_BUFFER_BIT );
+		});
+		gl.clearColor( old_color[0], old_color[1], old_color[2], old_color[3] );
+	}
 
 	if (!skip_mipmaps && this.minFilter && this.minFilter != gl.NEAREST && this.minFilter != gl.LINEAR ) {
 		this.bind();
@@ -6214,7 +6553,7 @@ Texture.prototype.applyBlur = function( offsetx, offsety, intensity, output_text
 
 	//save state
 	var current_fbo = gl.getParameter( gl.FRAMEBUFFER_BINDING );
-	var viewport = gl.getViewport(); 
+	var viewport = gl.getViewport();
 
 	//reuse fbo
 	var fbo = gl.__copy_fbo;
@@ -6254,7 +6593,7 @@ Texture.prototype.applyBlur = function( offsetx, offsety, intensity, output_text
 		shader.bind();
 
 		var destination = null;
-		
+
 		if(!temp_texture && output_texture == this) //we need a temporary texture
 			destination = temp_texture = GL.Texture.getTemporary( output_texture.width, output_texture.height, output_texture );
 		else
@@ -6276,7 +6615,7 @@ Texture.prototype.applyBlur = function( offsetx, offsety, intensity, output_text
 
 		mesh.unbindBuffers( shader );
 
-		if(temp_texture) //copy back 
+		if(temp_texture) //copy back
 			temp_texture.copyTo( output_texture );
 
 		if(temp_texture && is_temp) //release temp
@@ -6548,9 +6887,9 @@ Texture.fromMemory = function( width, height, pixels, options) //format in optio
 	{
 		if(options.type == gl.FLOAT)
 			pixels = new Float32Array( pixels );
-		else if(options.type == GL.HALF_FLOAT || options.type == GL.HALF_FLOAT_OES) 
+		else if(options.type == GL.HALF_FLOAT || options.type == GL.HALF_FLOAT_OES)
 			pixels = new Uint16Array( pixels ); //gl.UNSIGNED_SHORT_4_4_4_4 is only for texture that are SHORT per pixel, not per channel!
-		else 
+		else
 			pixels = new Uint8Array( pixels );
 	}
 
@@ -6599,11 +6938,11 @@ Texture.fromDDSInMemory = function(data, options) //format in options as format
 */
 Texture.fromShader = function(width, height, shader, options) {
 	options = options || {};
-	
+
 	var texture = new GL.Texture( width, height, options );
 	//copy content
 	texture.drawTo(function() {
-		gl.disable( gl.BLEND ); 
+		gl.disable( gl.BLEND );
 		gl.disable( gl.DEPTH_TEST );
 		gl.disable( gl.CULL_FACE );
 		var mesh = Mesh.getScreenQuad();
@@ -6630,7 +6969,7 @@ Texture.cubemapFromImages = function(images, options) {
 	options.texture_type = gl.TEXTURE_CUBE_MAP;
 
 	var texture = null;
-	
+
 	if(options.texture)
 	{
 		texture = options.texture;
@@ -6666,7 +7005,7 @@ Texture.cubemapFromImages = function(images, options) {
 };
 
 /**
-* Create a cubemap texture from a single image that contains all six images 
+* Create a cubemap texture from a single image that contains all six images
 * If it is a cross, it must be horizontally aligned, and options.is_cross must be equal to the column where the top and bottom are located (usually 1 or 2)
 * otherwise it assumes the 6 images are arranged vertically, in the order of OpenGL: +X, -X, +Y, -Y, +Z, -Z
 * @method Texture.cubemapFromImage
@@ -6818,7 +7157,7 @@ Texture.cubemapFromURL = function( url, options, on_complete ) {
 			on_complete(texture);
 	}
 
-	return texture;	
+	return texture;
 };
 
 /**
@@ -6867,7 +7206,7 @@ Texture.prototype.getPixels = function( cubemap_face, mipmap_level )
 		buffer = new Uint8Array( width * height * channels );
 	else if(type == GL.HALF_FLOAT || type == GL.HALF_FLOAT_OES) //previously half float couldnot be read
 		buffer = new Uint16Array( width * height * channels ); //gl.UNSIGNED_SHORT_4_4_4_4 is only for texture that are SHORT per pixel, not per channel!
-	else 
+	else
 		buffer = new Float32Array( width * height * channels );
 
 	gl.readPixels( 0,0, width, height, channels == 3 ? gl.RGB : gl.RGBA, type, buffer ); //NOT SUPPORTED FLOAT or RGB BY WEBGL YET
@@ -6882,7 +7221,7 @@ Texture.prototype.getPixels = function( cubemap_face, mipmap_level )
 * uploads some pixels to the texture (see uploadData method for more options)
 * @method setPixels
 * @param {ArrayBuffer} data gl.UNSIGNED_BYTE or gl.FLOAT data
-* @param {Boolean} no_flip do not flip in Y 
+* @param {Boolean} no_flip do not flip in Y
 * @param {Boolean} skip_mipmaps do not update mipmaps when possible
 * @param {Number} cubemap_face if the texture is a cubemap, which face
 */
@@ -6897,7 +7236,7 @@ Texture.prototype.setPixels = function( data, no_flip, skip_mipmaps, cubemap_fac
 /**
 * returns an array with six arrays containing the pixels of every cubemap face
 * @method getCubemapPixels
-* @return {Array} the array that has 6 typed arrays containing the pixels 
+* @return {Array} the array that has 6 typed arrays containing the pixels
 */
 Texture.prototype.getCubemapPixels = function()
 {
@@ -6909,7 +7248,7 @@ Texture.prototype.getCubemapPixels = function()
 /**
 * fills a cubemap given an array with typed arrays containing the pixels of 6 faces
 * @method setCubemapPixels
-* @param {Array} data array that has 6 typed arrays containing the pixels 
+* @param {Array} data array that has 6 typed arrays containing the pixels
 * @param {bool} noflip if pixels should not be flipped according to Y
 */
 Texture.prototype.setCubemapPixels = function( data_array, no_flip )
@@ -6943,7 +7282,7 @@ Texture.prototype.toCanvas = function( canvas, flip_y, max_size )
 	}
 
 	canvas = canvas || createCanvas( w, h );
-	if(canvas.width != w) 
+	if(canvas.width != w)
 		canvas.width = w;
 	if(canvas.height != h)
 		canvas.height = h;
@@ -6955,7 +7294,7 @@ Texture.prototype.toCanvas = function( canvas, flip_y, max_size )
 		{
 			//create a temporary texture
 			var temp = new GL.Texture(w,h,{ format: gl.RGBA, filter: gl.NEAREST });
-			this.copyTo( temp );	
+			this.copyTo( temp );
 			buffer = temp.getPixels();
 		}
 		else
@@ -7009,7 +7348,7 @@ Texture.prototype.toCanvas = function( canvas, flip_y, max_size )
 
 
 /**
-* returns the texture file in binary format 
+* returns the texture file in binary format
 * @method toBinary
 * @param {Boolean} flip_y
 * @return {ArrayBuffer} the arraybuffer of the file containing the image
@@ -7115,13 +7454,13 @@ Texture.prototype.generateMetadata = function()
 
 Texture.compareFormats = function(a,b)
 {
-	if(!a || !b) 
+	if(!a || !b)
 		return false;
-	if(a == b) 
+	if(a == b)
 		return true;
 
-	if( a.width != b.width || 
-		a.height != b.height || 
+	if( a.width != b.width ||
+		a.height != b.height ||
 		a.type != b.type || //gl.UNSIGNED_BYTE
 		a.format != b.format || //gl.RGB
 		a.texture_type != b.texture_type) //gl.TEXTURE_2D
@@ -7139,9 +7478,9 @@ Texture.compareFormats = function(a,b)
 */
 Texture.blend = function( a, b, factor, out )
 {
-	if(!a || !b) 
+	if(!a || !b)
 		return false;
-	if(a == b) 
+	if(a == b)
 	{
 		if(out)
 			a.copyTo(out);
@@ -7214,7 +7553,7 @@ Texture.cubemapToTexture2D = function( cubemap_texture, size, target_texture, ke
 }
 
 /**
-* returns a white texture of 1x1 pixel 
+* returns a white texture of 1x1 pixel
 * @method Texture.getWhiteTexture
 * @return {Texture} the white texture
 */
@@ -7230,7 +7569,7 @@ Texture.getWhiteTexture = function( gl )
 }
 
 /**
-* returns a black texture of 1x1 pixel 
+* returns a black texture of 1x1 pixel
 * @method Texture.getBlackTexture
 * @return {Texture} the black texture
 */
@@ -7288,7 +7627,7 @@ Texture.getTemporary = function( width, height, options, gl )
 		if( tex._key != key ) //|| tex.texture_type != texture_type || tex.format != format )
 			continue;
 		//remove from the pool
-		pool.splice(i,1); 
+		pool.splice(i,1);
 		tex._pool = 0;
 		return tex; //return
 	}
@@ -7340,9 +7679,8 @@ Texture.nextPOT = function( size )
 {
 	return Math.pow( 2, Math.ceil( Math.log(size) / Math.log(2) ) );
 }
-
-/** 
-* FBO for FrameBufferObjects, FBOs are used to store the render inside one or several textures 
+/**
+* FBO for FrameBufferObjects, FBOs are used to store the render inside one or several textures
 * Supports multibuffer and depthbuffer texture, useful for deferred rendering
 * @namespace GL
 * @class FBO
@@ -7355,7 +7693,7 @@ function FBO( textures, depth_texture, stencil, gl )
 {
 	gl = gl || global.gl;
 	this.gl = gl;
-	this._context_id = gl.context_id; 
+	this._context_id = gl.context_id;
 
 	if(textures && textures.constructor !== Array)
 		throw("FBO textures must be an Array");
@@ -7369,6 +7707,7 @@ function FBO( textures, depth_texture, stencil, gl )
 
 	this._stencil_enabled = false;
 	this._num_binded_textures = 0;
+	this.order = null;
 
 	//assign textures
 	if((textures && textures.length) || depth_texture)
@@ -7377,7 +7716,6 @@ function FBO( textures, depth_texture, stencil, gl )
 	//save state
 	this._old_fbo_handler = null;
 	this._old_viewport = new Float32Array(4);
-	this.order = null;
 }
 
 GL.FBO = FBO;
@@ -7394,15 +7732,15 @@ FBO.prototype.setTextures = function( color_textures, depth_texture, skip_disabl
 	//test depth
 	if( depth_texture && depth_texture.constructor === GL.Texture )
 	{
-		if( depth_texture.format !== GL.DEPTH_COMPONENT && 
-			depth_texture.format !== GL.DEPTH_STENCIL && 
-			depth_texture.format !== GL.DEPTH_COMPONENT16 && 
+		if( depth_texture.format !== GL.DEPTH_COMPONENT &&
+			depth_texture.format !== GL.DEPTH_STENCIL &&
+			depth_texture.format !== GL.DEPTH_COMPONENT16 &&
 			depth_texture.format !== GL.DEPTH_COMPONENT24 &&
 			depth_texture.format !== GL.DEPTH_COMPONENT32F )
 			throw("FBO Depth texture must be of format: gl.DEPTH_COMPONENT, gl.DEPTH_STENCIL or gl.DEPTH_COMPONENT16/24/32F (only in webgl2)");
 
-		if( depth_texture.type != GL.UNSIGNED_SHORT && 
-			depth_texture.type != GL.UNSIGNED_INT && 
+		if( depth_texture.type != GL.UNSIGNED_SHORT &&
+			depth_texture.type != GL.UNSIGNED_INT &&
 			depth_texture.type != GL.UNSIGNED_INT_24_8_WEBGL &&
 			depth_texture.type != GL.FLOAT)
 			throw("FBO Depth texture must be of type: gl.UNSIGNED_SHORT, gl.UNSIGNED_INT, gl.UNSIGNED_INT_24_8_WEBGL");
@@ -7429,7 +7767,7 @@ FBO.prototype.setTextures = function( color_textures, depth_texture, skip_disabl
 
 	if(this._stencil_enabled !== this.stencil)
 		same = false;
-		
+
 	if(same)
 		return;
 
@@ -7471,11 +7809,11 @@ FBO.prototype.update = function( skip_disable )
 			var t = color_textures[i];
 			if(t.constructor !== GL.Texture)
 				throw("FBO can only bind instances of GL.Texture");
-			if(w == -1) 
+			if(w == -1)
 				w = t.width;
 			else if(w != t.width)
 				throw("Cannot bind textures with different dimensions");
-			if(h == -1) 
+			if(h == -1)
 				h = t.height;
 			else if(h != t.height)
 				throw("Cannot bind textures with different dimensions");
@@ -7526,9 +7864,9 @@ FBO.prototype.update = function( skip_disable )
 	else //create a renderbuffer to store depth
 	{
 		var depth_renderbuffer = null;
-		
+
 		//allows to reuse a renderbuffer between FBOs
-		if( depth_texture && depth_texture.constructor === WebGLRenderbuffer && depth_texture.width == w && depth_texture.height == h ) 
+		if( depth_texture && depth_texture.constructor === WebGLRenderbuffer && depth_texture.width == w && depth_texture.height == h )
 			depth_renderbuffer = this._depth_renderbuffer = depth_texture;
 		else
 		{
@@ -7537,7 +7875,7 @@ FBO.prototype.update = function( skip_disable )
 			depth_renderbuffer.width = w;
 			depth_renderbuffer.height = h;
 		}
-		
+
 		gl.bindRenderbuffer( gl.RENDERBUFFER, depth_renderbuffer );
 		if(this.stencil)
 		{
@@ -7768,7 +8106,6 @@ FBO.prototype.clearSecondary = function( color )
 }
 
 
-
 /**
 * @namespace GL
 */
@@ -7790,7 +8127,7 @@ global.Shader = GL.Shader = function Shader( vertexSource, fragmentSource, macro
 		throw("GL.Shader source code parameter missing");
 
 	//used to avoid problems with resources moving between different webgl context
-	this._context_id = global.gl.context_id; 
+	this._context_id = global.gl.context_id;
 	var gl = this.gl = global.gl;
 
 	//expand macros
@@ -7815,7 +8152,7 @@ global.Shader = GL.Shader = function Shader( vertexSource, fragmentSource, macro
 	this.fs_shader = fs;
 
 	//Extract info from the shader
-	this.attributes = {}; 
+	this.attributes = {};
 	this.uniformInfo = {};
 	this.samplers = {};
 
@@ -7845,7 +8182,7 @@ Shader.injectCode = function( inject_code, code, gl )
 
 
 /**
-* Compiles one single shader source (could be gl.VERTEX_SHADER or gl.FRAGMENT_SHADER) and returns the webgl shader handler 
+* Compiles one single shader source (could be gl.VERTEX_SHADER or gl.FRAGMENT_SHADER) and returns the webgl shader handler
 * Used internaly to compile the vertex and fragment shader.
 * It throws an exception if there is any error in the code
 * @method Shader.compileSource
@@ -7885,8 +8222,8 @@ Shader.parseError = function( error_str, vs_code, fs_code )
 /**
 * It updates the code inside one shader
 * @method updateShader
-* @param {String} vertexSource 
-* @param {String} fragmentSource 
+* @param {String} vertexSource
+* @param {String} fragmentSource
 * @param {Object} macros [optional]
 */
 Shader.prototype.updateShader = function( vertexSource, fragmentSource, macros )
@@ -7924,7 +8261,7 @@ Shader.prototype.updateShader = function( vertexSource, fragmentSource, macros )
 	this.fs_shader = fs;
 
 	//Extract info from the shader
-	this.attributes = {}; 
+	this.attributes = {};
 	this.uniformInfo = {};
 	this.samplers = {};
 
@@ -7942,7 +8279,7 @@ Shader.prototype.updateShader = function( vertexSource, fragmentSource, macros )
 Shader.prototype.extractShaderInfo = function()
 {
 	var gl = this.gl;
-	
+
 	var l = gl.getProgramParameter( this.program, gl.ACTIVE_UNIFORMS );
 
 	//extract uniforms info
@@ -7954,7 +8291,7 @@ Shader.prototype.extractShaderInfo = function()
 		var uniformName = data.name;
 
 		//arrays have uniformName[0], strip the [] (also data.size tells you if it is an array)
-		var pos = uniformName.indexOf("["); 
+		var pos = uniformName.indexOf("[");
 		if(pos != -1)
 		{
 			var pos2 = uniformName.indexOf("]."); //leave array of structs though
@@ -7965,7 +8302,7 @@ Shader.prototype.extractShaderInfo = function()
 		//store texture samplers
 		if(data.type == gl.SAMPLER_2D || data.type == gl.SAMPLER_CUBE || data.type == GL.SAMPLER_3D)
 			this.samplers[ uniformName ] = data.type;
-		
+
 		//get which function to call when uploading this uniform
 		var func = Shader.getUniformFunc(data);
 		var is_matrix = false;
@@ -7974,7 +8311,7 @@ Shader.prototype.extractShaderInfo = function()
 		var type_length = GL.TYPE_LENGTH[ data.type ] || 1;
 
 		//save the info so the user doesnt have to specify types when uploading data to the shader
-		this.uniformInfo[ uniformName ] = { 
+		this.uniformInfo[ uniformName ] = {
 			type: data.type,
 			func: func,
 			size: data.size,
@@ -7993,14 +8330,14 @@ Shader.prototype.extractShaderInfo = function()
 			break;
 		var func = Shader.getUniformFunc(data);
 		var type_length = GL.TYPE_LENGTH[ data.type ] || 1;
-		this.uniformInfo[ data.name ] = { 
+		this.uniformInfo[ data.name ] = {
 			type: data.type,
 			func: func,
 			type_length: type_length,
 			size: data.size,
-			loc: null 
+			loc: null
 		}; //gl.getAttribLocation( this.program, data.name )
-		this.attributes[ data.name ] = gl.getAttribLocation(this.program, data.name );	
+		this.attributes[ data.name ] = gl.getAttribLocation(this.program, data.name );
 	}
 }
 
@@ -8029,7 +8366,7 @@ Shader.prototype.hasAttribute = function(name)
 
 /**
 * Tells you which function to call when uploading a uniform according to the data type in the shader
-* Used internally from extractShaderInfo to optimize calls 
+* Used internally from extractShaderInfo to optimize calls
 * @method Shader.getUniformFunc
 * @param {Object} data info about the uniform
 * @return {Function}
@@ -8039,11 +8376,11 @@ Shader.getUniformFunc = function( data )
 	var func = null;
 	switch (data.type)
 	{
-		case GL.FLOAT: 		
+		case GL.FLOAT:
 			if(data.size == 1)
-				func = gl.uniform1f; 
+				func = gl.uniform1f;
 			else
-				func = gl.uniform1fv; 
+				func = gl.uniform1fv;
 			break;
 		case GL.FLOAT_MAT2: func = gl.uniformMatrix2fv; break;
 		case GL.FLOAT_MAT3:	func = gl.uniformMatrix3fv; break;
@@ -8052,12 +8389,12 @@ Shader.getUniformFunc = function( data )
 		case GL.FLOAT_VEC3: func = gl.uniform3fv; break;
 		case GL.FLOAT_VEC4: func = gl.uniform4fv; break;
 
-		case GL.UNSIGNED_INT: 
-		case GL.INT: 	  
+		case GL.UNSIGNED_INT:
+		case GL.INT:
 			if(data.size == 1)
-				func = gl.uniform1i; 
+				func = gl.uniform1i;
 			else
-				func = gl.uniform1iv; 
+				func = gl.uniform1iv;
 			break;
 		case GL.INT_VEC2: func = gl.uniform2iv; break;
 		case GL.INT_VEC3: func = gl.uniform3iv; break;
@@ -8068,7 +8405,7 @@ Shader.getUniformFunc = function( data )
 		case GL.SAMPLER_CUBE:
 			func = gl.uniform1i; break;
 		default: func = gl.uniform1f; break;
-	}	
+	}
 	return func;
 }
 
@@ -8097,7 +8434,7 @@ Shader.fromURL = function( vs_path, fs_path, on_complete )
 				gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);\n\
 			}\n\
 			";
-	
+
 	var shader = new GL.Shader(vs_code, fs_code);
 	shader.ready = false;
 
@@ -8244,7 +8581,7 @@ Shader.prototype._setUniform = (function(){
 		//if(info.loc.constructor !== Function)
 		//	return;
 
-		if(value == null) 
+		if(value == null)
 			return;
 
 		if(value.constructor === Array)
@@ -8313,7 +8650,7 @@ Shader.prototype.drawBuffers = function( vertexBuffers, indexBuffer, mode, range
 
 	var gl = this.gl;
 
-	gl.useProgram(this.program); //this could be removed assuming every shader is called with some uniforms 
+	gl.useProgram(this.program); //this could be removed assuming every shader is called with some uniforms
 
 	// enable attributes as necessary.
 	var length = 0;
@@ -8379,7 +8716,7 @@ Shader.prototype.drawBuffers = function( vertexBuffers, indexBuffer, mode, range
 
 Shader._instancing_arrays = [];
 
-Shader.prototype.drawInstanced = function( mesh, primitive, indices, instanced_uniforms, range_start, range_length, num_instances )
+Shader.prototype.drawInstanced = function( mesh, primitive, indices, instanced_uniforms, range_start, range_length, num_intances )
 {
 	if(range_length === 0)
 		return;
@@ -8390,7 +8727,7 @@ Shader.prototype.drawInstanced = function( mesh, primitive, indices, instanced_u
 	if( gl.webgl_version == 1 && !gl.extensions.ANGLE_instanced_arrays )
 		throw("instancing not supported");
 
-	gl.useProgram(this.program); //this could be removed assuming every shader is called with some uniforms 
+	gl.useProgram(this.program); //this could be removed assuming every shader is called with some uniforms
 
 	// enable attributes as necessary.
 	var length = 0;
@@ -8420,18 +8757,18 @@ Shader.prototype.drawInstanced = function( mesh, primitive, indices, instanced_u
 	}
 
 	var indexBuffer = null;
-	if(indices)
+	if( indices )
 	{
-		if(indices.constructor === GL.Buffer)
-			indexBuffer = indices;
-		else
+		if( indices.constructor === String)
 			indexBuffer = mesh.getIndexBuffer( indices );
+		else if( indices.constructor === GL.Buffer )
+			indexBuffer = indices;
 	}
 
 	//range rendering
 	var offset = 0; //in bytes
 	if(range_start > 0) //render a polygon range
-		offset = range_start; 
+		offset = range_start;
 
 	if (indexBuffer)
 		length = indexBuffer.buffer.length - offset;
@@ -8514,8 +8851,8 @@ Shader.prototype.drawInstanced = function( mesh, primitive, indices, instanced_u
 		index+=1;
 	}
 
-	if( num_instances )
-		batch_length = num_instances;
+	if( num_intances )
+		batch_length = num_intances;
 
 	if( ext ) //webgl 1.0
 	{
@@ -8554,7 +8891,7 @@ Shader.prototype.drawInstanced = function( mesh, primitive, indices, instanced_u
 				if( ext ) //webgl 1
 					ext.vertexAttribDivisorANGLE( uniformLocation+k, 0 );
 				else
-					gl.vertexAttribDivisor( uniformLocation+k, 0 ); 
+					gl.vertexAttribDivisor( uniformLocation+k, 0 );
 			}
 		}
 		else //others
@@ -8632,7 +8969,7 @@ Shader.convertTo100 = function(code,type)
 		//change out for varying
 		//add #extension GL_OES_standard_derivatives
 	//in FRAGMENT
-		//change in for varying 
+		//change in for varying
 		//remove out vec4 _gl_FragColor
 		//rename _gl_FragColor for gl_FragColor
 	//in both
@@ -8665,18 +9002,18 @@ Shader.validateValue = function( value, uniform_info )
 	switch (uniform_info.type)
 	{
 		//used to validate shaders
-		case GL.INT: 
-		case GL.FLOAT: 
-		case GL.SAMPLER_2D: 
-		case GL.SAMPLER_CUBE: 
+		case GL.INT:
+		case GL.FLOAT:
+		case GL.SAMPLER_2D:
+		case GL.SAMPLER_CUBE:
 			return isNumber(value);
-		case GL.INT_VEC2: 
+		case GL.INT_VEC2:
 		case GL.FLOAT_VEC2:
 			return value.length === 2;
-		case GL.INT_VEC3: 
+		case GL.INT_VEC3:
 		case GL.FLOAT_VEC3:
 			return value.length === 3;
-		case GL.INT_VEC4: 
+		case GL.INT_VEC4:
 		case GL.FLOAT_VEC4:
 		case GL.FLOAT_MAT2:
 			 return value.length === 4;
@@ -8892,7 +9229,7 @@ Shader.removeComments = function(code, one_line)
 	var result = [];
 	for(var i = 0; i < lines.length; ++i)
 	{
-		var line = lines[i]; 
+		var line = lines[i];
 		var pos = line.indexOf("//");
 		if(pos != -1)
 			line = lines[i].substr(0,pos);
@@ -9080,7 +9417,7 @@ Shader.getCubemapShowShader = function(gl)
 	return gl.shaders[":show_cubemap"] = shader;
 }
 
-//shader to copy a cubemap into another 
+//shader to copy a cubemap into another
 Shader.getPolarToCubemapShader = function(gl)
 {
 	gl = gl || global.gl;
@@ -9108,7 +9445,7 @@ Shader.getPolarToCubemapShader = function(gl)
 }
 
 
-//shader to copy a cubemap into another 
+//shader to copy a cubemap into another
 Shader.getCubemapCopyShader = function(gl)
 {
 	gl = gl || global.gl;
@@ -9256,7 +9593,7 @@ Shader.getFXAAShader = function(gl)
 		viewport[1] = gl.viewport_data[3];
 		iviewport[0] = 1/gl.viewport_data[2];
 		iviewport[1] = 1/gl.viewport_data[3];
-		this.uniforms({ u_viewportSize: viewport, u_iViewportSize: iviewport });	
+		this.uniforms({ u_viewportSize: viewport, u_iViewportSize: iviewport });
 	}
 	return gl.shaders[":fxaa"] = shader;
 }
@@ -9285,7 +9622,7 @@ Shader.getFlatShader = function(gl)
 /**
 * creates a new WebGL context (it can create the canvas or use an existing one)
 * @method create
-* @param {Object} options supported are: 
+* @param {Object} options supported are:
 * - width
 * - height
 * - canvas
@@ -9302,7 +9639,7 @@ GL.create = function(options) {
 			canvas = document.getElementById( options.canvas );
 			if(!canvas) throw("Canvas element not found: " + options.canvas );
 		}
-		else 
+		else
 			canvas = options.canvas;
 	}
 	else
@@ -9332,7 +9669,7 @@ GL.create = function(options) {
 	var gl = null;
 
 	var seq = null;
-	if(options.version == 2)	
+	if(options.version == 2)
 		seq = ['webgl2','experimental-webgl2'];
 	else if(options.version == 1 || options.version === undefined) //default
 		seq = ['webgl','experimental-webgl'];
@@ -9410,7 +9747,7 @@ GL.create = function(options) {
 		gl._viewport_func = gl.viewport;
 		gl.viewport_data = new Float32Array([0,0,gl.canvas.width,gl.canvas.height]); //32000 max viewport, I guess its fine
 		gl.viewport = function(a,b,c,d) { var v = this.viewport_data; v[0] = a|0; v[1] = b|0; v[2] = c|0; v[3] = d|0; this._viewport_func(a,b,c,d); }
-		gl.getViewport = function(v) { 
+		gl.getViewport = function(v) {
 			if(v) { v[0] = gl.viewport_data[0]; v[1] = gl.viewport_data[1]; v[2] = gl.viewport_data[2]; v[3] = gl.viewport_data[3]; return v; }
 			return new Float32Array( gl.viewport_data );
 		};
@@ -9427,12 +9764,12 @@ GL.create = function(options) {
 	//reverse names helper (assuming no names repeated)
 	if(!GL.reverse)
 	{
-		GL.reverse = {}; 
+		GL.reverse = {};
 		for(var i in gl)
 			if( gl[i] && gl[i].constructor === Number )
 				GL.reverse[ gl[i] ] = i;
 	}
-	
+
 	//just some checks
 	if(typeof(glMatrix) == "undefined")
 		throw("glMatrix not found, LiteGL requires glMatrix to be included");
@@ -9495,7 +9832,7 @@ GL.create = function(options) {
 			var dt = (now - time) * 0.001;
 			if(context.mouse)
 				context.mouse.last_buttons = context.mouse.buttons;
-			if (context.onupdate) 
+			if (context.onupdate)
 				context.onupdate(dt);
 			LEvent.trigger( context, "update", dt);
 			if (context.ondraw)
@@ -9512,7 +9849,7 @@ GL.create = function(options) {
 			time = now;
 		}
 		this._requestFrame_id = post(loop); //launch main loop
-	}	
+	}
 
 	//store binded to be able to remove them if destroyed
 	/*
@@ -9595,7 +9932,7 @@ GL.create = function(options) {
 	};
 
 	/**
-	* Tells the system to capture mouse events on the canvas. 
+	* Tells the system to capture mouse events on the canvas.
 	* This will trigger onmousedown, onmousemove, onmouseup, onmousewheel callbacks assigned in the gl context
 	* example: gl.onmousedown = function(e){ ... }
 	* The event is a regular MouseEvent with some extra parameters
@@ -9607,7 +9944,6 @@ GL.create = function(options) {
 		canvas.addEventListener("mousedown", onmouse);
 		canvas.addEventListener("mousemove", onmouse);
 		canvas.addEventListener("dragstart", onmouse);
-		//canvas.addEventListener("mouseup", onmouse); ??
 		if(capture_wheel)
 		{
 			canvas.addEventListener("mousewheel", onmouse, false);
@@ -9664,14 +10000,13 @@ GL.create = function(options) {
 			LEvent.trigger(gl,"mousedown");
 		}
 		else if(e.eventType == "mousemove")
-		{ 
+		{
 			if(gl.onmousemove)
-				gl.onmousemove(e); 
+				gl.onmousemove(e);
 			LEvent.trigger(gl,"mousemove",e);
-		} 
+		}
 		else if(e.eventType == "mouseup")
 		{
-			//console.log("mouseup");
 			if(gl.mouse.buttons == 0) //no more buttons pressed
 			{
 				canvas.addEventListener("mousemove", onmouse);
@@ -9687,7 +10022,7 @@ GL.create = function(options) {
 			LEvent.trigger(gl,"mouseup",e);
 		}
 		else if((e.eventType == "mousewheel" || e.eventType == "wheel" || e.eventType == "DOMMouseScroll"))
-		{ 
+		{
 			e.eventType = "mousewheel";
 			if(e.type == "wheel")
 				e.wheel = -e.deltaY; //in firefox deltaY is 1 while in Chrome is 120
@@ -9731,7 +10066,7 @@ GL.create = function(options) {
 		canvas.addEventListener("touchstart", ontouch, true);
 		canvas.addEventListener("touchmove", ontouch, true);
 		canvas.addEventListener("touchend", ontouch, true);
-		canvas.addEventListener("touchcancel", ontouch, true);   
+		canvas.addEventListener("touchcancel", ontouch, true);
 
 		canvas.addEventListener('gesturestart', ongesture );
 		canvas.addEventListener('gesturechange', ongesture );
@@ -9757,14 +10092,14 @@ GL.create = function(options) {
 		//ignore secondary touches
         if(e.touches.length && e.changedTouches[0].identifier !== e.touches[0].identifier)
         	return;
-        	
+
 		if(touches > 1)
 			return;
 
 		 switch(e.type)
 		{
 			case "touchstart": type = "mousedown"; break;
-			case "touchmove":  type = "mousemove"; break;        
+			case "touchmove":  type = "mousemove"; break;
 			case "touchend":   type = "mouseup"; break;
 			default: return;
 		}
@@ -9803,7 +10138,7 @@ GL.create = function(options) {
 	*/
 	var onkey_handler = null;
 	gl.captureKeys = function( prevent_default, only_canvas ) {
-		if(onkey_handler) 
+		if(onkey_handler)
 			return;
 		gl.keys = {};
 
@@ -9833,7 +10168,7 @@ GL.create = function(options) {
 
 		//regular key
 		if (!e.altKey && !e.ctrlKey && !e.metaKey) {
-			if (key) 
+			if (key)
 				gl.keys[key] = e.type == "keydown";
 			prev_state = gl.keys[e.keyCode];
 			gl.keys[e.keyCode] = e.type == "keydown";
@@ -9842,9 +10177,9 @@ GL.create = function(options) {
 		//avoid repetition if key stays pressed
 		if(prev_state != gl.keys[e.keyCode])
 		{
-			if(e.type == "keydown" && gl.onkeydown) 
+			if(e.type == "keydown" && gl.onkeydown)
 				gl.onkeydown(e);
-			else if(e.type == "keyup" && gl.onkeyup) 
+			else if(e.type == "keyup" && gl.onkeyup)
 				gl.onkeyup(e);
 			LEvent.trigger(gl, e.type, e);
 		}
@@ -9873,18 +10208,18 @@ GL.create = function(options) {
 	function onGamepad(e)
 	{
 		console.log(e);
-		if(gl.ongamepad) 
+		if(gl.ongamepad)
 			gl.ongamepad(e);
 	}
 	*/
 
 	/**
-	* Tells the system to capture gamepad events on the canvas. 
+	* Tells the system to capture gamepad events on the canvas.
 	* @method captureGamepads
 	*/
 	gl.captureGamepads = function()
 	{
-		var getGamepads = navigator.getGamepads || navigator.webkitGetGamepads || navigator.mozGetGamepads; 
+		var getGamepads = navigator.getGamepads || navigator.webkitGetGamepads || navigator.mozGetGamepads;
 		if(!getGamepads) return;
 		this.gamepads = getGamepads.call(navigator);
 
@@ -9910,7 +10245,7 @@ GL.create = function(options) {
 	gl.getGamepads = function(skip_mapping)
 	{
 		//gamepads
-		var getGamepads = navigator.getGamepads || navigator.webkitGetGamepads || navigator.mozGetGamepads; 
+		var getGamepads = navigator.getGamepads || navigator.webkitGetGamepads || navigator.mozGetGamepads;
 		if(!getGamepads)
 			return;
 		var gamepads = getGamepads.call(navigator);
@@ -10066,7 +10401,7 @@ GL.create = function(options) {
 		if(skip_reverse)
 			return canvas;
 
-		//flip image 
+		//flip image
 		var final_canvas = createCanvas(areax,areay);
 		var ctx = final_canvas.getContext("2d");
 		ctx.translate(0,areay);
@@ -10129,7 +10464,7 @@ GL.create = function(options) {
 			delete loading_textures[this.url];
 			if(on_load)
 				on_load(texture);
-		} 
+		}
 		img.src = url;
 		loading_textures[url] = true;
 		return null;
@@ -10139,10 +10474,10 @@ GL.create = function(options) {
 	* draws a texture to the viewport
 	* @method drawTexture
 	* @param {Texture} texture
-	* @param {number} x in viewport coordinates 
-	* @param {number} y in viewport coordinates 
-	* @param {number} w in viewport coordinates 
-	* @param {number} h in viewport coordinates 
+	* @param {number} x in viewport coordinates
+	* @param {number} y in viewport coordinates
+	* @param {number} w in viewport coordinates
+	* @param {number} h in viewport coordinates
 	* @param {number} tx texture x in texture coordinates
 	* @param {number} ty texture y in texture coordinates
 	* @param {number} tw texture width in texture coordinates
@@ -10270,14 +10605,14 @@ GL.augmentEvent = function(e, root_element)
 
 	root_element = root_element || e.target || gl.canvas;
 	b = root_element.getBoundingClientRect();
-		
+
 	e.mousex = e.clientX - b.left;
 	e.mousey = e.clientY - b.top;
 	e.canvasx = e.mousex;
 	e.canvasy = b.height - e.mousey;
 	e.deltax = 0;
 	e.deltay = 0;
-	
+
 	if(e.type == "mousedown")
 	{
 		this.dragging = true;
@@ -10333,16 +10668,16 @@ GL.isMobile = function()
 	if(!global.navigator) //server side js?
 		return this.mobile = false;
 
-	if( (navigator.userAgent.match(/iPhone/i)) || 
-		(navigator.userAgent.match(/iPod/i)) || 
-		(navigator.userAgent.match(/iPad/i)) || 
+	if( (navigator.userAgent.match(/iPhone/i)) ||
+		(navigator.userAgent.match(/iPod/i)) ||
+		(navigator.userAgent.match(/iPad/i)) ||
 		(navigator.userAgent.match(/Android/i))) {
 		return this.mobile = true;
 	}
 	return this.mobile = false;
 }
 /**
-* @namespace 
+* @namespace
 */
 
 /**
@@ -10364,11 +10699,11 @@ var LEvent = global.LEvent = GL.LEvent = {
 	**/
 	bind: function( instance, event_type, callback, target_instance )
 	{
-		if(!instance) 
+		if(!instance)
 			throw("cannot bind event to null");
-		if(!callback) 
+		if(!callback)
 			throw("cannot bind to null callback");
-		if(instance.constructor === String ) 
+		if(instance.constructor === String )
 			throw("cannot bind event to a string");
 
 		var events = instance.__levents;
@@ -10396,11 +10731,11 @@ var LEvent = global.LEvent = GL.LEvent = {
 	**/
 	unbind: function( instance, event_type, callback, target_instance )
 	{
-		if(!instance) 
+		if(!instance)
 			throw("cannot unbind event to null");
-		if(!callback) 
+		if(!callback)
 			throw("cannot unbind from null callback");
-		if(instance.constructor === String ) 
+		if(instance.constructor === String )
 			throw("cannot bind event to a string");
 
 		var events = instance.__levents;
@@ -10435,7 +10770,7 @@ var LEvent = global.LEvent = GL.LEvent = {
 	**/
 	unbindAll: function( instance, target_instance, callback )
 	{
-		if(!instance) 
+		if(!instance)
 			throw("cannot unbind events in null");
 
 		var events = instance.__levents;
@@ -10458,7 +10793,7 @@ var LEvent = global.LEvent = GL.LEvent = {
 			var array = events[i];
 			for(var j = array.length - 1; j >= 0; --j) //iterate backwards to avoid problems after removing
 			{
-				if( array[j][1] != target_instance || (callback && callback !== array[j][0]) ) 
+				if( array[j][1] != target_instance || (callback && callback !== array[j][0]) )
 					continue;
 
 				array.splice(j,1);//remove
@@ -10474,7 +10809,7 @@ var LEvent = global.LEvent = GL.LEvent = {
 	**/
 	unbindAllEvent: function( instance, event_type )
 	{
-		if(!instance) 
+		if(!instance)
 			throw("cannot unbind events in null");
 
 		var events = instance.__levents;
@@ -10503,7 +10838,7 @@ var LEvent = global.LEvent = GL.LEvent = {
 		if( !events )
 			return;
 
-		if( !events.hasOwnProperty(event_type) ) 
+		if( !events.hasOwnProperty(event_type) )
 			return false;
 
 		for(var i = 0, l = events[event_type].length; i < l; ++i)
@@ -10527,7 +10862,7 @@ var LEvent = global.LEvent = GL.LEvent = {
 		if(!instance)
 			throw("LEvent cannot have null as instance");
 		var events = instance.__levents;
-		if(!events || !events.hasOwnProperty( event_type ) || !events[event_type].length) 
+		if(!events || !events.hasOwnProperty( event_type ) || !events[event_type].length)
 			return false;
 		return true;
 	},
@@ -10546,7 +10881,7 @@ var LEvent = global.LEvent = GL.LEvent = {
 		var events = instance.__levents;
 
 		//no events binded
-		if(!events) 
+		if(!events)
 			return false;
 
 		for(var j in events)
@@ -10575,9 +10910,9 @@ var LEvent = global.LEvent = GL.LEvent = {
 	**/
 	trigger: function( instance, event_type, params, reverse_order, expand_parameters )
 	{
-		if(!instance) 
+		if(!instance)
 			throw("cannot trigger event from null");
-		if(instance.constructor === String ) 
+		if(instance.constructor === String )
 			throw("cannot bind event to a string");
 
 		var events = instance.__levents;
@@ -10632,7 +10967,7 @@ var LEvent = global.LEvent = GL.LEvent = {
 	* @param {*} parameters that will be received by the binded function
 	* @param {bool} reverse_order trigger in reverse order (binded last get called first)
 	* @param {bool} expand_parameters parameters are passed not as one single parameter, but as many
-	* return {bool} false 
+	* return {bool} false
 	**/
 	triggerArray: function( instances, event_type, params, reverse_order, expand_parameters )
 	{
@@ -10640,9 +10975,9 @@ var LEvent = global.LEvent = GL.LEvent = {
 		for(var i = 0, l = instances.length; i < l; ++i)
 		{
 			var instance = instances[i];
-			if(!instance) 
+			if(!instance)
 				throw("cannot trigger event from null");
-			if(instance.constructor === String ) 
+			if(instance.constructor === String )
 				throw("cannot bind event to a string");
 
 			var events = instance.__levents;
@@ -10867,7 +11202,7 @@ global.geo = {
 	* @method testRayPlane
 	* @param {vec3} start ray start
 	* @param {vec3} direction ray direction
-	* @param {vec3} P point where the plane passes	
+	* @param {vec3} P point where the plane passes
 	* @param {vec3} N normal of the plane
 	* @param {vec3} result collision position
 	* @return {boolean} returns if the ray collides the plane or the ray is parallel to the plane
@@ -10891,12 +11226,12 @@ global.geo = {
 	* @method testSegmentPlane
 	* @param {vec3} start segment start
 	* @param {vec3} end segment end
-	* @param {vec3} P point where the plane passes	
+	* @param {vec3} P point where the plane passes
 	* @param {vec3} N normal of the plane
 	* @param {vec3} result collision position
 	* @return {boolean} returns if the segment collides the plane or it is parallel to the plane
 	*/
-	testSegmentPlane: (function() { 
+	testSegmentPlane: (function() {
 		var temp = vec3.create();
 		return function(start, end, P, N, result)
 		{
@@ -10905,7 +11240,7 @@ global.geo = {
 			var direction = vec3.sub( temp, end, start );
 			var denom = vec3.dot(N, direction);
 			if( Math.abs(denom) < EPSILON)
-				return false; //parallel 
+				return false; //parallel
 			var t = (numer / denom);
 			if(t < 0.0)
 				return false; //behind the start
@@ -10928,7 +11263,7 @@ global.geo = {
 	* @param {number} max_dist not fully tested
 	* @return {boolean} returns if the ray collides the sphere
 	*/
-	testRaySphere: (function() { 
+	testRaySphere: (function() {
 		var temp = vec3.create();
 		return function(start, direction, center, radius, result, max_dist)
 		{
@@ -10945,7 +11280,7 @@ global.geo = {
 			var c = orig[0]*orig[0] + orig[1]*orig[1] + orig[2]*orig[2] - radius*radius;
 			//return quadraticFormula(a,b,c,t0,t1) ? 2 : 0;
 
-			var q = b*b - 4*a*c; 
+			var q = b*b - 4*a*c;
 			if( q < 0.0 )
 				return false;
 
@@ -10990,59 +11325,59 @@ global.geo = {
 		var dd = vec3.dot(d, d);
 
 		// Test if segment fully outside either endcap of cylinder
-		if (md < 0.0 && md + nd < 0.0) return false; // Segment outside p side of cylinder
-		if (md > dd && md + nd > dd) return false; // Segment outside q side of cylinder
+		if (md < 0.0 && md + nd < 0.0) return false; // Segment outside �p� side of cylinder
+		if (md > dd && md + nd > dd) return false; // Segment outside �q� side of cylinder
 
 		var nn = vec3.dot(n, n);
 		var mn = vec3.dot(m, n);
-		var a = dd * nn - nd * nd; 
+		var a = dd * nn - nd * nd;
 		var k = vec3.dot(m,m) - r*r;
 		var c = dd * k - md * md;
 
-		if (Math.abs(a) < EPSILON) 
+		if (Math.abs(a) < EPSILON)
 		{
 			// Segment runs parallel to cylinder axis
 			if (c > 0.0) return false;
-			// a and thus the segment lie outside cylinder
+			// �a� and thus the segment lie outside cylinder
 			// Now known that segment intersects cylinder; figure out how it intersects
 			if (md < 0.0) t = -mn/nn;
-			// Intersect segment against p endcap
+			// Intersect segment against �p� endcap
 			else if (md > dd)
 				t=(nd-mn)/nn;
-			// Intersect segment against q endcap
+			// Intersect segment against �q� endcap
 			else t = 0.0;
-			// a lies inside cylinder
-			if(result) 
+			// �a� lies inside cylinder
+			if(result)
 				vec3.add(result, sa, vec3.scale(result, n,t) );
 			return true;
 		}
 		var b = dd * mn - nd * md;
 		var discr = b*b - a*c;
-		if (discr < 0.0) 
+		if (discr < 0.0)
 			return false;
 		// No real roots; no intersection
 		t = (-b - Math.sqrt(discr)) / a;
-		if (t < 0.0 || t > 1.0) 
+		if (t < 0.0 || t > 1.0)
 			return false;
 		// Intersection lies outside segment
 		if(md+t*nd < 0.0)
 		{
-			// Intersection outside cylinder on p side
-			if (nd <= 0.0) 
+			// Intersection outside cylinder on �p� side
+			if (nd <= 0.0)
 				return false;
 			// Segment pointing away from endcap
 			t = -md / nd;
 			// Keep intersection if Dot(S(t) - p, S(t) - p) <= r^2
-			if(result) 
+			if(result)
 				vec3.add(result, sa, vec3.scale(result, n,t) );
 			return k+2*t*(mn+t*nn) <= 0.0;
 		} else if (md+t*nd>dd)
 		{
-			// Intersection outside cylinder on q side
+			// Intersection outside cylinder on �q� side
 			if (nd >= 0.0) return false; //Segment pointing away from endcap
 			t = (dd - md) / nd;
 			// Keep intersection if Dot(S(t) - q, S(t) - q) <= r^2
-			if(result) 
+			if(result)
 				vec3.add(result, sa, vec3.scale(result, n,t) );
 			return k+dd - 2*md+t*(2*(mn - nd)+t*nn) <= 0.0;
 		}
@@ -11063,12 +11398,12 @@ global.geo = {
 	* @param {vec3} result collision position
 	* @return {boolean} returns if the ray collides the box
 	*/
-	testRayBox: (function() { 
-	
+	testRayBox: (function() {
+
 		var quadrant = new Float32Array(3);
 		var candidatePlane = new Float32Array(3);
 		var maxT = new Float32Array(3);
-	
+
 	return function(start, direction, minB, maxB, result, max_dist)
 	{
 		//#define NUMDIM	3
@@ -11081,7 +11416,7 @@ global.geo = {
 		var inside = true;
 		var i = 0|0;
 		var whichPlane;
-		
+
 		quadrant.fill(0);
 		maxT.fill(0);
 		candidatePlane.fill(0);
@@ -11139,7 +11474,7 @@ global.geo = {
 			}
 		return true;				/* ray hits box */
 	}
-	})(),	
+	})(),
 
 	/**
 	* test a ray bounding-box collision, it uses the  BBox class and allows to use non-axis aligned bbox
@@ -11151,8 +11486,8 @@ global.geo = {
 	* @param {vec3} result collision position in world space unless in_local is true
 	* @return {boolean} returns if the ray collides the box
 	*/
-	testRayBBox: (function(){ 
-	var inv = mat4.create();	
+	testRayBBox: (function(){
+	var inv = mat4.create();
 	var end = vec3.create();
 	var origin2 = vec3.create();
 	return function( origin, direction, box, model, result, max_dist, in_local )
@@ -11197,7 +11532,7 @@ global.geo = {
 	* @param {BBox} b
 	* @return {boolean} true if it overlaps
 	*/
-	testBBoxBBox: function(a, b) 
+	testBBoxBBox: function(a, b)
 	{
 		var tx =  Math.abs( b[0] - a[0]);
 		if (tx > (a[3] + b[3]))
@@ -11230,7 +11565,7 @@ global.geo = {
 	* @param {BBox} bounding_box
 	* @return {boolean} true if it overlaps
 	*/
-	testSphereBBox: function(center, radius, bbox) 
+	testSphereBBox: function(center, radius, bbox)
 	{
 		// arvo's algorithm from gamasutra
 		// http://www.gamasutra.com/features/19991018/Gomez_4.htm
@@ -11240,17 +11575,17 @@ global.geo = {
 		//from the sphere to the box
 		var vmin = BBox.getMin( bbox );
 		var vmax = BBox.getMax( bbox );
-		for(var i = 0; i < 3; ++i) 
-		{ 
+		for(var i = 0; i < 3; ++i)
+		{
 			if( center[i] < vmin[i] )
 			{
 				s = center[i] - vmin[i];
-				d += s*s; 
+				d += s*s;
 			}
 			else if( center[i] > vmax[i] )
-			{ 
+			{
 				s = center[i] - vmax[i];
-				d += s*s; 
+				d += s*s;
 			}
 		}
 		//return d <= r*r
@@ -11266,7 +11601,7 @@ global.geo = {
 			var sphere_bbox = BBox.fromCenterHalfsize( center, halfsize );
 			if ( geo.testBBoxBBox(bbox, sphere_bbox) )
 				return INSIDE;
-			return OVERLAP;	
+			return OVERLAP;
 			*/
 		}
 
@@ -11316,7 +11651,7 @@ global.geo = {
 		var planes = planes || new Float32Array(4*6);
 
 		//right
-		planes.set( [vp[3] - vp[0], vp[7] - vp[4], vp[11] - vp[8], vp[15] - vp[12] ], 0); 
+		planes.set( [vp[3] - vp[0], vp[7] - vp[4], vp[11] - vp[8], vp[15] - vp[12] ], 0);
 		normalize(0);
 
 		//left
@@ -11444,7 +11779,7 @@ global.BBox = GL.BBox = {
 	max:9,
 	radius:12,
 	data_length: 13,
-	
+
 	//corners: new Float32Array([1,1,1,  1,1,-1,  1,-1,1,  1,-1,-1,  -1,1,1,  -1,1,-1,  -1,-1,1,  -1,-1,-1 ]),
 	corners: [ vec3.fromValues(1,1,1), vec3.fromValues(1,1,-1), vec3.fromValues(1,-1,1), vec3.fromValues(1,-1,-1), vec3.fromValues(-1,1,1), vec3.fromValues(-1,1,-1), vec3.fromValues(-1,-1,1), vec3.fromValues(-1,-1,-1) ] ,
 
@@ -11479,7 +11814,7 @@ global.BBox = GL.BBox = {
 	{
 		out.set(bb);
 		return out;
-	},	
+	},
 
 	/**
 	* create a bbox from one point
@@ -11534,7 +11869,7 @@ global.BBox = GL.BBox = {
 	{
 		var bb = this.create();
 		this.setFromPoints(bb, points);
-		return bb;	
+		return bb;
 	},
 
 	/**
@@ -11587,7 +11922,7 @@ global.BBox = GL.BBox = {
 		var center = vec3.add( bb.subarray(0,3), min, max );
 		vec3.scale( center, center, 0.5);
 		vec3.subtract( bb.subarray(3,6), max, center );
-		bb[12] = vec3.length(bb.subarray(3,6)); //radius		
+		bb[12] = vec3.length(bb.subarray(3,6)); //radius
 		*/
 		return bb;
 	},
@@ -11610,7 +11945,7 @@ global.BBox = GL.BBox = {
 		bb[11] = max[2];
 
 		//halfsize
-		var halfsize = bb.subarray(3,6); 
+		var halfsize = bb.subarray(3,6);
 		vec3.sub( halfsize, max, min ); //range
 		vec3.scale( halfsize, halfsize, 0.5 );
 
@@ -11669,7 +12004,7 @@ global.BBox = GL.BBox = {
 		var points = [];
 		for(var i = 0; i < 24; i += 3 )
 			points.push( points_buffer.subarray( i, i+3 ) );
-		
+
 		return function( out, bb, mat )
 		{
 			var centerx = bb[0];
@@ -11681,7 +12016,7 @@ global.BBox = GL.BBox = {
 
 			var corners = this.corners;
 
-			for(var i = 0; i < 8; ++i)		
+			for(var i = 0; i < 8; ++i)
 			{
 				var corner = corners[i];
 				var result = points[i];
@@ -11717,7 +12052,7 @@ global.BBox = GL.BBox = {
 		else
 			corners = new Float32Array( this.corners );
 
-		for(var i = 0; i < 8; ++i)		
+		for(var i = 0; i < 8; ++i)
 		{
 			var corner = corners.subarray(i*3, i*3+3);
 			vec3.multiply( corner, halfsize, corner );
@@ -11725,7 +12060,7 @@ global.BBox = GL.BBox = {
 		}
 
 		return corners;
-	},	
+	},
 
 	merge: function( out, a, b )
 	{
@@ -11748,13 +12083,13 @@ global.BBox = GL.BBox = {
 		if( p[2] < out[8] )	out[8] = p[2];
 		else if( p[2] > out[11] ) out[11] = p[2];
 
-		//recompute 
+		//recompute
 		var min = out.subarray(6,9);
 		var max = out.subarray(9,12);
 		var center = vec3.add( out.subarray(0,3), min, max );
 		vec3.scale( center, center, 0.5);
 		vec3.subtract( out.subarray(3,6), max, center );
-		out[12] = vec3.length( out.subarray(3,6) ); //radius		
+		out[12] = vec3.length( out.subarray(3,6) ); //radius
 		return out;
 	},
 
@@ -11792,7 +12127,7 @@ global.distanceToPlane = GL.distanceToPlane = function distanceToPlane(plane, po
 
 global.planeBoxOverlap = GL.planeBoxOverlap = function planeBoxOverlap(plane, box)
 {
-	var n = plane; //.subarray(0,3); 
+	var n = plane; //.subarray(0,3);
 	var d = plane[3];
 	//hack, to avoif GC I use indices directly
 	var center = box; //.subarray(0,3);
@@ -11820,14 +12155,14 @@ global.planeBoxOverlap = GL.planeBoxOverlap = function planeBoxOverlap(plane, bo
 * @param {Mesh} mesh object containing vertices buffer (indices buffer optional)
 */
 
-global.Octree = GL.Octree = function Octree( mesh )
+global.Octree = GL.Octree = function Octree( mesh, start, length )
 {
 	this.root = null;
 	this.total_depth = 0;
 	this.total_nodes = 0;
 	if(mesh)
 	{
-		this.buildFromMesh(mesh);
+		this.buildFromMesh(mesh, start, length);
 		this.total_nodes = this.trim();
 	}
 }
@@ -11837,20 +12172,33 @@ Octree.MAX_OCTREE_DEPTH = 8;
 Octree.OCTREE_MARGIN_RATIO = 0.01;
 Octree.OCTREE_MIN_MARGIN = 0.1;
 
+//mode
+Octree.NEAREST = 0; //returns the nearest collision
+Octree.FIRST = 1; //returns the first collision
+Octree.ALL = 2;  //returns the all collisions
+
 var octree_tested_boxes = 0;
 var octree_tested_triangles = 0;
 
-Octree.prototype.buildFromMesh = function( mesh )
+Octree.prototype.buildFromMesh = function( mesh, start, length )
 {
 	this.total_depth = 0;
 	this.total_nodes = 0;
+	start = start || 0;
 
 	var vertices = mesh.getBuffer("vertices").data;
 	var triangles = mesh.getIndexBuffer("triangles");
-	if(triangles) 
+	if(triangles)
 		triangles = triangles.data; //get the internal data
 
-	var root = this.computeAABB(vertices);
+	if( !length )
+		length = triangles ? triangles.length : vertices.length / 3;
+
+	var root = null;
+	if( triangles )
+		root = this.computeAABBFromIndices(vertices,triangles,start,length);
+	else
+		root = this.computeAABB(vertices);
 	this.root = root;
 	this.total_nodes = 1;
 	this.total_triangles = triangles ? triangles.length / 3 : vertices.length / 9;
@@ -11868,11 +12216,11 @@ Octree.prototype.buildFromMesh = function( mesh )
 	root.faces = [];
 	root.inside = 0;
 
-
 	//indexed
+	var end = start + length;
 	if(triangles)
 	{
-		for(var i = 0; i < triangles.length; i+=3)
+		for(var i = start; i < end; i+=3)
 		{
 			var face = new Float32Array([vertices[triangles[i]*3], vertices[triangles[i]*3+1],vertices[triangles[i]*3+2],
 						vertices[triangles[i+1]*3], vertices[triangles[i+1]*3+1],vertices[triangles[i+1]*3+2],
@@ -11882,7 +12230,7 @@ Octree.prototype.buildFromMesh = function( mesh )
 	}
 	else
 	{
-		for(var i = 0; i < vertices.length; i+=9)
+		for(var i = start*3; i < length*3; i+=9) //vertices
 		{
 			var face = new Float32Array( 10 );
 			face.set( vertices.subarray(i,i+9) );
@@ -11994,10 +12342,34 @@ Octree.prototype.computeAABB = function(vertices)
 	{
 		for(var j = 0; j < 3; j++)
 		{
-			if(min[j] > vertices[i+j]) 
+			if(min[j] > vertices[i+j])
 				min[j] = vertices[i+j];
-			if(max[j] < vertices[i+j]) 
+			if(max[j] < vertices[i+j])
 				max[j] = vertices[i+j];
+		}
+	}
+
+	return {min: min, max: max, size: vec3.sub( vec3.create(), max, min) };
+}
+
+Octree.prototype.computeAABBFromIndices = function(vertices,indices,start,length)
+{
+	start = start || 0;
+	length = length || indices.length;
+
+	var index = indices[start];
+	var min = new Float32Array([ vertices[index*3], vertices[index*3+1], vertices[index*3+2] ]);
+	var max = new Float32Array([ vertices[index*3], vertices[index*3+1], vertices[index*3+2] ]);
+
+	for(var i = start+1; i < start+length; ++i)
+	{
+		var index = indices[i]*3;
+		for(var j = 0; j < 3; j++)
+		{
+			if(min[j] > vertices[index+j])
+				min[j] = vertices[index+j];
+			if(max[j] < vertices[index+j])
+				max[j] = vertices[index+j];
 		}
 	}
 
@@ -12033,18 +12405,21 @@ Octree.prototype.trim = function(node)
 * @param {vec3} direction ray direction position
 * @param {number} dist_min
 * @param {number} dist_max
+* @param {number} test_backfaces if rays colliding with the back face must be considered a valid collision
+* @param {number} mode which mode to use (Octree.NEAREST: nearest collision to origin, Octree.FIRST: first collision detected (fastest), Octree.ALL: all collision (slowest)
 * @return {HitTest} object containing pos and normal
 */
-Octree.prototype.testRay = (function(){ 
+Octree.prototype.testRay = (function(){
 	var origin_temp = vec3.create();
 	var direction_temp = vec3.create();
 	var min_temp = vec3.create();
 	var max_temp = vec3.create();
 
-	return function(origin, direction, dist_min, dist_max, test_backfaces )
+	return function(origin, direction, dist_min, dist_max, test_backfaces, mode )
 	{
 		octree_tested_boxes = 0;
 		octree_tested_triangles = 0;
+		mode = mode || Octree.NEAREST;
 
 		if(!this.root)
 		{
@@ -12060,18 +12435,99 @@ Octree.prototype.testRay = (function(){
 		if(!test) //no collision with mesh bounding box
 			return null;
 
-		var test = Octree.testRayInNode( this.root, origin_temp, direction_temp, test_backfaces );
-		if(test != null)
-		{
-			var pos = vec3.scale( vec3.create(), direction, test.t );
-			vec3.add( pos, pos, origin );
-			test.pos = pos;
-			return test;
-		}
+		var test = Octree.testRayInNode( this.root, origin_temp, direction_temp, test_backfaces, mode );
+		if(test == null )
+			return null;
 
-		return null;
+		if(mode == Octree.ALL)
+			return test;
+
+		var pos = vec3.scale( vec3.create(), direction, test.t );
+		vec3.add( pos, pos, origin );
+		test.pos = pos;
+		return test;
 	}
 })();
+
+//tests collisions with a node of the octree and its children
+//WARNING: cannot use static here, it uses recursion
+Octree.testRayInNode = function( node, origin, direction, test_backfaces, mode )
+{
+	var test = null;
+	var prev_test = null;
+	octree_tested_boxes += 1;
+
+	//test faces
+	if(node.faces)
+		for(var i = 0, l = node.faces.length; i < l; ++i)
+		{
+			var face = node.faces[i];
+			octree_tested_triangles += 1;
+			test = Octree.hitTestTriangle( origin, direction, face.subarray(0,3) , face.subarray(3,6), face.subarray(6,9), test_backfaces );
+			if (test == null)
+				continue;
+			if(mode == Octree.FIRST)
+				return test;
+			if(mode == Octree.ALL)
+			{
+				if(!prev_test)
+					prev_test = [];
+				prev_test.push(test);
+			}
+			else { //find closer
+				test.face = face;
+				if(prev_test)
+					prev_test.mergeWith( test );
+				else
+					prev_test = test;
+			}
+		}
+
+	//WARNING: cannot use statics here, this function uses recursion
+	var child_min = vec3.create();
+	var child_max = vec3.create();
+
+	//test children nodes faces
+	var child;
+	if(node.c)
+		for(var i = 0; i < node.c.length; ++i)
+		{
+			child = node.c[i];
+			child_min.set( child.min );
+			child_max.set( child.max );
+
+			//test with node box
+			test = Octree.hitTestBox( origin, direction, child_min, child_max );
+			if( test == null )
+				continue;
+
+			//nodebox behind current collision, then ignore node
+			if(mode != Octree.ALL && prev_test && test.t > prev_test.t)
+				continue;
+
+			//test collision with node
+			test = Octree.testRayInNode( child, origin, direction, test_backfaces, mode );
+			if(test == null)
+				continue;
+			if(mode == Octree.FIRST)
+				return test;
+
+			if(mode == Octree.ALL)
+			{
+				if(!prev_test)
+					prev_test = [];
+				prev_test.push(test);
+			}
+			else {
+				if(prev_test)
+					prev_test.mergeWith( test );
+				else
+					prev_test = test;
+			}
+		}
+
+	return prev_test;
+}
 
 /**
 * test collision between sphere and the triangles in the octree (only test if there is any vertex inside the sphere)
@@ -12096,65 +12552,6 @@ Octree.prototype.testSphere = function( origin, radius )
 		return false; //out of the box
 
 	return Octree.testSphereInNode( this.root, origin, rr );
-}
-
-//WARNING: cannot use static here, it uses recursion
-Octree.testRayInNode = function( node, origin, direction, test_backfaces )
-{
-	var test = null;
-	var prev_test = null;
-	octree_tested_boxes += 1;
-
-	//test faces
-	if(node.faces)
-		for(var i = 0, l = node.faces.length; i < l; ++i)
-		{
-			var face = node.faces[i];
-			octree_tested_triangles += 1;
-			test = Octree.hitTestTriangle( origin, direction, face.subarray(0,3) , face.subarray(3,6), face.subarray(6,9), test_backfaces );
-			if (test==null)
-				continue;
-			test.face = face;
-			if(prev_test)
-				prev_test.mergeWith( test );
-			else
-				prev_test = test;
-		}
-
-	//WARNING: cannot use statics here, this function uses recursion
-	var child_min = vec3.create();
-	var child_max = vec3.create();
-
-	//test children nodes faces
-	var child;
-	if(node.c)
-		for(var i = 0; i < node.c.length; ++i)
-		{
-			child = node.c[i];
-			child_min.set( child.min );
-			child_max.set( child.max );
-
-			//test with node box
-			test = Octree.hitTestBox( origin, direction, child_min, child_max );
-			if( test == null )
-				continue;
-
-			//nodebox behind current collision, then ignore node
-			if(prev_test && test.t > prev_test.t)
-				continue;
-
-			//test collision with node
-			test = Octree.testRayInNode( child, origin, direction, test_backfaces );
-			if(test == null)
-				continue;
-
-			if(prev_test)
-				prev_test.mergeWith( test );
-			else
-				prev_test = test;
-		}
-
-	return prev_test;
 }
 
 //WARNING: cannot use static here, it uses recursion
@@ -12209,7 +12606,7 @@ Octree.isInsideAABB = function(a,b)
 }
 
 
-Octree.hitTestBox = (function(){ 
+Octree.hitTestBox = (function(){
 	var tMin = vec3.create();
 	var tMax = vec3.create();
 	var inv = vec3.create();
@@ -12218,11 +12615,11 @@ Octree.hitTestBox = (function(){
 	var tmp = vec3.create();
 	var epsilon = 1.0e-6;
 	var eps = vec3.fromValues( epsilon,epsilon,epsilon );
-	
+
 	return function( origin, ray, box_min, box_max ) {
 		vec3.subtract( tMin, box_min, origin );
 		vec3.subtract( tMax, box_max, origin );
-		
+
 		if(	vec3.maxValue(tMin) < 0 && vec3.minValue(tMax) > 0)
 			return new HitTest(0,origin,ray);
 
@@ -12248,13 +12645,13 @@ Octree.hitTestBox = (function(){
 	}
 })();
 
-Octree.hitTestTriangle = (function(){ 
-	
+Octree.hitTestTriangle = (function(){
+
 	var AB = vec3.create();
 	var AC = vec3.create();
 	var toHit = vec3.create();
 	var tmp = vec3.create();
-	
+
 	return function( origin, ray, A, B, C, test_backfaces ) {
 		vec3.subtract( AB, B, A );
 		vec3.subtract( AC, C, A );
@@ -12287,8 +12684,8 @@ Octree.hitTestTriangle = (function(){
 
 //from http://realtimecollisiondetection.net/blog/?p=103
 //radius must be squared
-Octree.testSphereTriangle = (function(){ 
-	
+Octree.testSphereTriangle = (function(){
+
 	var A = vec3.create();
 	var B = vec3.create();
 	var C = vec3.create();
@@ -12297,7 +12694,7 @@ Octree.testSphereTriangle = (function(){
 	var BC = vec3.create();
 	var CA = vec3.create();
 	var V = vec3.create();
-	
+
 	return function( P, rr, A_, B_, C_ ) {
 		vec3.sub( A, A_, P );
 		vec3.sub( B, B_, P );
@@ -12355,17 +12752,17 @@ Octree.testSphereBox = function( center, radius2, box_min, box_max ) {
 	var s, d = 0.0;
 	//find the square of the distance
 	//from the sphere to the box
-	for(var i = 0; i < 3; ++i) 
-	{ 
+	for(var i = 0; i < 3; ++i)
+	{
 		if( center[i] < box_min[i] )
 		{
 			s = center[i] - box_min[i];
-			d += s*s; 
+			d += s*s;
 		}
 		else if( center[i] > box_max[i] )
-		{ 
+		{
 			s = center[i] - box_max[i];
-			d += s*s; 
+			d += s*s;
 		}
 	}
 	//return d <= r*r
@@ -12380,203 +12777,16 @@ Octree.testSphereBox = function( center, radius2, box_min, box_max ) {
 		var sphere_bbox = BBox.fromCenterHalfsize( center, halfsize );
 		if ( geo.testBBoxBBox(bbox, sphere_bbox) )
 			return INSIDE;
-		return OVERLAP;	
+		return OVERLAP;
 		*/
 	}
 
 	return false; //OUTSIDE;
 };
-// Provides a convenient raytracing interface.
-
-// ### new GL.HitTest([t, hit, normal])
-// 
-// This is the object used to return hit test results. If there are no
-// arguments, the constructed argument represents a hit infinitely far
-// away.
-global.HitTest = GL.HitTest = function HitTest(t, hit, normal) {
-  this.t = arguments.length ? t : Number.MAX_VALUE;
-  this.hit = hit;
-  this.normal = normal;
-  this.face = null;
-}
-
-// ### .mergeWith(other)
-// 
-// Changes this object to be the closer of the two hit test results.
-HitTest.prototype = {
-  mergeWith: function(other) {
-    if (other.t > 0 && other.t < this.t) {
-      this.t = other.t;
-      this.hit = other.hit;
-      this.normal = other.normal;
-	  this.face = other.face;
-    }
-  }
-};
-
-// ### new GL.Ray( origin, direction )
-global.Ray = GL.Ray = function Ray( origin, direction )
-{
-	this.origin = vec3.create();
-	this.direction = vec3.create();
-	this.collision_point = vec3.create();
-
-	if(origin)
-		this.origin.set( origin );
-	if(direction)
-		this.direction.set( direction );
-}
-
-Ray.prototype.testPlane = function( P, N )
-{
-	return geo.testRayPlane( this.origin, this.direction, P, N, this.collision_point );
-}
-
-Ray.prototype.testSphere = function( center, radius, max_dist )
-{
-	return geo.testRaySphere( this.origin, this.direction, center, radius, this.collision_point, max_dist );
-}
-
-// ### new GL.Raytracer()
-// 
-// This will read the current modelview matrix, projection matrix, and viewport,
-// reconstruct the eye position, and store enough information to later generate
-// per-pixel rays using `getRayForPixel()`.
-// 
-// Example usage:
-// 
-//     var tracer = new GL.Raytracer();
-//     var ray = tracer.getRayForPixel(
-//       gl.canvas.width / 2,
-//       gl.canvas.height / 2);
-//       var result = GL.Raytracer.hitTestSphere(
-//       tracer.eye, ray, new GL.Vector(0, 0, 0), 1);
-
-global.Raytracer = GL.Raytracer = function Raytracer( viewprojection_matrix, viewport ) {
-	this.viewport = vec4.create();
-	this.ray00 = vec3.create();
-	this.ray10 = vec3.create();
-	this.ray01 = vec3.create();
-	this.ray11 = vec3.create();
-	this.eye = vec3.create();
-	this.setup( viewprojection_matrix, viewport );
-}
-
-Raytracer.prototype.setup = function( viewprojection_matrix, viewport )
-{
-	viewport = viewport || gl.viewport_data;
-	this.viewport.set( viewport );
-
-	var minX = viewport[0], maxX = minX + viewport[2];
-	var minY = viewport[1], maxY = minY + viewport[3];
-
-	vec3.set( this.ray00, minX, minY, 1 );
-	vec3.set( this.ray10, maxX, minY, 1 );
-	vec3.set( this.ray01, minX, maxY, 1 );
-	vec3.set( this.ray11, maxX, maxY, 1 );
-	vec3.unproject( this.ray00, this.ray00, viewprojection_matrix, viewport);
-	vec3.unproject( this.ray10, this.ray10, viewprojection_matrix, viewport);
-	vec3.unproject( this.ray01, this.ray01, viewprojection_matrix, viewport);
-	vec3.unproject( this.ray11, this.ray11, viewprojection_matrix, viewport);
-	var eye = this.eye;
-	vec3.unproject(eye, eye, viewprojection_matrix, viewport);
-	vec3.subtract(this.ray00, this.ray00, eye);
-	vec3.subtract(this.ray10, this.ray10, eye);
-	vec3.subtract(this.ray01, this.ray01, eye);
-	vec3.subtract(this.ray11, this.ray11, eye);
-}
-
-  // ### .getRayForPixel(x, y)
-  // 
-  // Returns the ray direction originating from the camera and traveling through the pixel `x, y`.
-Raytracer.prototype.getRayForPixel = (function(){ 
-	var ray0 = vec3.create();
-	var ray1 = vec3.create();
-	return function(x, y, out) {
-		out = out || vec3.create();
-		x = (x - this.viewport[0]) / this.viewport[2];
-		y = 1 - (y - this.viewport[1]) / this.viewport[3];
-		vec3.lerp(ray0, this.ray00, this.ray10, x);
-		vec3.lerp(ray1, this.ray01, this.ray11, x);
-		vec3.lerp( out, ray0, ray1, y)
-		return vec3.normalize( out, out );
-	}
-})();
-
-// ### GL.Raytracer.hitTestBox(origin, ray, min, max)
-// 
-// Traces the ray starting from `origin` along `ray` against the axis-aligned box
-// whose coordinates extend from `min` to `max`. Returns a `HitTest` with the
-// information or `null` for no intersection.
-// 
-// This implementation uses the [slab intersection method](http://www.siggraph.org/education/materials/HyperGraph/raytrace/rtinter3.htm).
-var _hittest_inv = mat4.create();
-Raytracer.hitTestBox = function(origin, ray, min, max, model) {
-  var _hittest_v3 = new Float32Array(10*3); //reuse memory to speedup
-  
-  if(model)
-  {
-	var inv = mat4.invert( _hittest_inv, model );
-	origin = mat4.multiplyVec3( _hittest_v3.subarray(3,6), inv, origin );
-	ray = mat4.rotateVec3( _hittest_v3.subarray(6,9), inv, ray );
-  }
-
-  var tMin = vec3.subtract( _hittest_v3.subarray(9,12), min, origin );
-  vec3.divide( tMin, tMin, ray );
-
-  var tMax = vec3.subtract( _hittest_v3.subarray(12,15), max, origin );
-  vec3.divide( tMax, tMax, ray );
-
-  var t1 = vec3.min( _hittest_v3.subarray(15,18), tMin, tMax);
-  var t2 = vec3.max( _hittest_v3.subarray(18,21), tMin, tMax);
-
-  var tNear = vec3.maxValue(t1);
-  var tFar = vec3.minValue(t2);
-
-  if (tNear > 0 && tNear <= tFar) {
-    var epsilon = 1.0e-6;
-	var hit = vec3.scale( _hittest_v3.subarray(21,24), ray, tNear);
-	vec3.add( hit, origin, hit );
-
-    vec3.addValue(_hittest_v3.subarray(24,27), min, epsilon);
-    vec3.subValue(_hittest_v3.subarray(27,30), max, epsilon);
-
-    return new HitTest(tNear, hit, vec3.fromValues(
-      (hit[0] > max[0]) - (hit[0] < min[0]),
-      (hit[1] > max[1]) - (hit[1] < min[1]),
-      (hit[2] > max[2]) - (hit[2] < min[2])
-    ));
-  }
-
-  return null;
-};
-
-
-
-
-// ### GL.Raytracer.hitTestSphere(origin, ray, center, radius)
-// 
-// Traces the ray starting from `origin` along `ray` against the sphere defined
-// by `center` and `radius`. Returns a `HitTest` with the information or `null`
-// for no intersection.
-Raytracer.hitTestSphere = function(origin, ray, center, radius) {
-  var offset = vec3.subtract( vec3.create(), origin,center);
-  var a = vec3.dot(ray,ray);
-  var b = 2 * vec3.dot(ray,offset);
-  var c = vec3.dot(offset,offset) - radius * radius;
-  var discriminant = b * b - 4 * a * c;
-
-  if (discriminant > 0) {
-    var t = (-b - Math.sqrt(discriminant)) / (2 * a), hit = vec3.add(vec3.create(),origin, vec3.scale(vec3.create(), ray, t));
-    return new HitTest(t, hit, vec3.scale( vec3.create(), vec3.subtract(vec3.create(), hit,center), 1.0/radius));
-  }
-
-  return null;
-};
 
 
 // ### GL.Raytracer.hitTestTriangle(origin, ray, a, b, c)
-// 
+//
 // Traces the ray starting from `origin` along `ray` against the triangle defined
 // by the points `a`, `b`, and `c`. Returns a `HitTest` with the information or
 // `null` for no intersection.
@@ -12612,6 +12822,291 @@ Raytracer.hitTestTriangle = function(origin, ray, a, b, c) {
 * @return {Object} mesh information (vertices, coords, normals, indices)
 */
 
+Mesh.parseOBJ = function(text, options)
+{
+	options = options || {};
+	var MATNAME_EXTENSION = options.matextension || "";//".json";
+	var support_uint = true;
+
+	//unindexed containers
+	var vertices = [];
+	var normals = [];
+	var uvs = [];
+
+	//final containers
+	var vertices_buffer_data = [];
+	var normals_buffer_data = [];
+	var uvs_buffer_data = [];
+
+	//groups
+	var group_id = 0;
+	var groups = [];
+	var current_group_materials = {};
+	var last_group_name = null;
+	var materials_found = {};
+	var mtllib = null;
+	var group = createGroup();
+
+	var indices_map = new Map();
+	var next_index = 0;
+	var s = 1; //scaling to change unit system
+	if(options.scale)
+		s = options.scale;
+
+	var V_CODE = 1;
+	var VT_CODE = 2;
+	var VN_CODE = 3;
+	var F_CODE = 4;
+	var G_CODE = 5;
+	var O_CODE = 6;
+	var USEMTL_CODE = 7;
+	var MTLLIB_CODE = 8;
+	var codes = { v: V_CODE, vt: VT_CODE, vn: VN_CODE, f: F_CODE, g: G_CODE, o: O_CODE, usemtl: USEMTL_CODE, mtllib: MTLLIB_CODE };
+
+	var x,y,z;
+
+	var lines = text.split("\n");
+	var length = lines.length;
+	for (var lineIndex = 0;  lineIndex < length; ++lineIndex) {
+
+		var line = lines[lineIndex];
+		line = line.replace(/[ \t]+/g, " ").replace(/\s\s*$/, ""); //better than trim
+
+		if(line[ line.length - 1 ] == "\\") //breakline support
+		{
+			lineIndex += 1;
+			var next_line = lines[lineIndex].replace(/[ \t]+/g, " ").replace(/\s\s*$/, ""); //better than trim
+			line = (line.substr(0,line.length - 1) + next_line).replace(/[ \t]+/g, " ").replace(/\s\s*$/, "");
+		}
+
+		if (line[0] == "#")
+			continue;
+		if(line == "")
+			continue;
+
+		var tokens = line.split(" ");
+		var code = codes[ tokens[0] ];
+
+		if( code <= VN_CODE ) //v,vt,vn
+		{
+			x = parseFloat(tokens[1]);
+			y = parseFloat(tokens[2]);
+			if( code != VT_CODE ) //not always present
+				z = parseFloat(tokens[3]);
+		}
+
+		switch(code)
+		{
+			case V_CODE:
+				x *= s; y *= s; z *= s;
+				vertices.push(x,y,z);
+				break;
+			case VT_CODE: uvs.push(x,y);	break;
+			case VN_CODE: normals.push(x,y,z);	break;
+			case F_CODE:
+				if (tokens.length < 4)
+					continue; //faces with less that 3 vertices? nevermind
+				//get the triangle indices
+				var polygon_indices = [];
+				for(var i = 1; i < tokens.length; ++i)
+					polygon_indices.push( getIndex( tokens[i] ) );
+				group.indices.push( polygon_indices[0], polygon_indices[1], polygon_indices[2] );
+				//polygons are break intro triangles
+				for(var i = 2; i < polygon_indices.length-1; ++i)
+					group.indices.push( polygon_indices[0], polygon_indices[i], polygon_indices[i+1] );
+				break;
+			case G_CODE:
+			case O_CODE:  //whats the difference?
+				var name = tokens[1];
+				last_group_name = name;
+				if(!group.name)
+					group.name = name;
+				else
+				{
+					current_group_materials = {};
+					group = createGroup( name );
+				}
+				break;
+			case USEMTL_CODE:
+				changeMaterial( tokens[1] );
+				break;
+			case MTLLIB_CODE:
+				mtllib = tokens[1];
+				break;
+			default:
+		}
+	}
+
+	//generate indices
+	var indices = [];
+	var group_index = 0;
+	var final_groups = [];
+	for(var i = 0; i < groups.length; ++i)
+	{
+		var group = groups[i];
+		if(!group.indices) //already added?
+			continue;
+		group.start = group_index;
+		group.length = group.indices.length;
+		indices = indices.concat( group.indices );
+		delete group.indices; //do not store indices in JSON format!
+		group_index += group.length;
+		final_groups.push( group );
+	}
+	groups = final_groups;
+
+	//finish mesh
+	var mesh = {};
+
+	if(!vertices.length)
+	{
+		console.error("mesh without vertices");
+		return null;
+	}
+
+	//create typed arrays
+	mesh.vertices = new Float32Array( vertices_buffer_data );
+	if ( normals_buffer_data.length )
+		mesh.normals = new Float32Array( normals_buffer_data );
+	if ( uvs_buffer_data.length )
+		mesh.coords = new Float32Array( uvs_buffer_data );
+	if ( indices && indices.length > 0 )
+		mesh.triangles = new ( support_uint && group_index > 256*256 ? Uint32Array : Uint16Array )(indices);
+
+	//extra info
+	mesh.bounding = GL.Mesh.computeBoundingBox( mesh.vertices );
+	var info = {};
+	if(groups.length > 1)
+	{
+		info.groups = groups;
+		//compute bounding of groups? //TODO: this is complicated, it is affected by indices, etc, better done afterwards
+	}
+
+	mesh.info = info;
+	if( !mesh.bounding )
+	{
+		console.log("empty mesh");
+		return null;
+	}
+
+	//if( mesh.bounding.radius == 0 || isNaN(mesh.bounding.radius))
+	//	console.log("no radius found in mesh");
+	//console.log(mesh);
+	if(options.only_data)
+		return mesh;
+
+	//creates and returns a GL.Mesh
+	var final_mesh = null;
+	final_mesh = Mesh.load( mesh, null, options.mesh );
+	//final_mesh.updateBoundingBox();
+	return final_mesh;
+
+	//this function helps reuse triplets that have been created before
+	function getIndex( str )
+	{
+		var pos,tex,nor,f;
+		var has_negative = false;
+
+		//cannot use negative indices as keys, convert them to positive
+		if(str.indexOf("-") == -1)
+		{
+			var index = indices_map.get(str);
+			if(index !== undefined)
+				return index;
+		}
+		else
+			has_negative = true;
+
+		if(!f) //maybe it was parsed before
+			f = str.split("/");
+
+		if (f.length == 1) { //unpacked
+			pos = parseInt(f[0]);
+			tex = pos;
+			nor = pos;
+		}
+		else if (f.length == 2) { //no normals
+			pos = parseInt(f[0]);
+			tex = parseInt(f[1]);
+			nor = pos;
+		}
+		else if (f.length == 3) { //all three indexed
+			pos = parseInt(f[0]);
+			tex = parseInt(f[1]);
+			nor = parseInt(f[2]);
+		}
+		else {
+			console.log("Problem parsing: unknown number of values per face");
+			return -1;
+		}
+
+		//negative indices are relative to the end
+		if(pos < 0)
+			pos = vertices.length / 3 + pos + 1;
+		if(nor < 0)
+			nor = normals.length / 2 + nor + 1;
+		if(tex < 0)
+			tex = uvs.length / 2 + tex + 1;
+
+		//try again to see if we already have this
+		if(has_negative)
+		{
+			str = pos + "/" + tex + "/" + nor;
+			var index = indices_map.get(str);
+			if(index !== undefined)
+				return index;
+		}
+
+		//fill buffers
+		pos -= 1; tex -= 1; nor -= 1; //indices in obj start in 1, buffers in 0
+		vertices_buffer_data.push( vertices[pos*3+0], vertices[pos*3+1], vertices[pos*3+2] );
+		if(uvs.length)
+			uvs_buffer_data.push( uvs[tex*2+0], uvs[tex*2+1] );
+		if(normals.length)
+			normals_buffer_data.push( normals[nor*3+0], normals[nor*3+1], normals[nor*3+2] );
+
+		//store index
+		var index = next_index;
+		indices_map.set( str, index );
+		++next_index;
+		return index;
+	}
+
+	function createGroup( name )
+	{
+		var g = {
+			name: name || "",
+			material: "",
+			start: -1,
+			length: -1,
+			indices: []
+		};
+		groups.push(g);
+		return g;
+	}
+
+	function changeMaterial( material_name )
+	{
+		if( !group.material )
+		{
+			group.material = material_name + MATNAME_EXTENSION;
+			current_group_materials[ material_name ] = group;
+			return group;
+		}
+
+		var g = current_group_materials[ material_name ];
+		if(!g)
+		{
+			g = createGroup( last_group_name + "_" + material_name );
+			g.material = material_name + MATNAME_EXTENSION;
+			current_group_materials[ material_name ] = g;
+		}
+		group = g;
+		return g;
+	}
+}
+
+/* old
 Mesh.parseOBJ = function( text, options )
 {
 	options = options || {};
@@ -12727,9 +13222,9 @@ Mesh.parseOBJ = function( text, options )
 
 			//for every corner of this polygon
 			var polygon_indices = [];
-			for (var i=1; i < tokens.length; ++i) 
+			for (var i=1; i < tokens.length; ++i)
 			{
-				if (!(tokens[i] in facemap) || skip_indices) 
+				if (!(tokens[i] in facemap) || skip_indices)
 				{
 					f = tokens[i].split("/");
 
@@ -12801,7 +13296,7 @@ Mesh.parseOBJ = function( text, options )
 							y = normals[nor*3+1];
 							z = normals[nor*3+2];
 						}
-						
+
 						normalsArray.push(x,y,z);
 					}
 
@@ -12905,7 +13400,7 @@ Mesh.parseOBJ = function( text, options )
 		mesh.triangles = new Uint16Array(indicesArray);
 
 	var info = {};
-	if(groups.length > 1)
+	//if(groups.length > 1) //???
 		info.groups = groups;
 	mesh.info = info;
 
@@ -12918,6 +13413,7 @@ Mesh.parseOBJ = function( text, options )
 	final_mesh.updateBoundingBox();
 	return final_mesh;
 }
+//*/
 
 Mesh.parsers["obj"] = Mesh.parseOBJ;
 
@@ -12944,7 +13440,7 @@ Mesh.encoders["obj"] = function( mesh, options )
 		for (var i = 0; i < normals.length; i+=3)
 			lines.push("vn " + normals[i].toFixed(4) + " " + normals[i+1].toFixed(4) + " " + normals[i+2].toFixed(4) );
 	}
-	
+
 	//store uvs
 	var coordsBuffer = mesh.getBuffer("coords");
 	if(coordsBuffer)
@@ -12991,7 +13487,7 @@ Mesh.encoders["obj"] = function( mesh, options )
 				lines.push( "f " + (i+1) + "/" + (i+1) + "/" + (i+1) + " " + (i+2) + "/" + (i+2) + "/" + (i+2) + " " + (i+3) + "/" + (i+3) + "/" + (i+3) );
 		}
 	}
-	
+
 	return lines.join("\n");
 }
 
@@ -13153,7 +13649,7 @@ Mesh.parsers["wbin"] = Mesh.fromBinary = function( data_array, options )
 		if(o.wireframe) index_buffers.wireframe = o.wireframe;
 	}
 
-	var mesh = { 
+	var mesh = {
 		vertex_buffers: vertex_buffers,
 		index_buffers: index_buffers,
 		bounding: o.bounding,
@@ -13167,7 +13663,7 @@ Mesh.parsers["wbin"] = Mesh.fromBinary = function( data_array, options )
 		for(var i = 0; i < mesh.bones.length; ++i)
 			mesh.bones[i][1] = mat4.clone(mesh.bones[i][1]);
 		if(o.bind_matrix)
-			mesh.bind_matrix = mat4.clone( o.bind_matrix );		
+			mesh.bind_matrix = mat4.clone( o.bind_matrix );
 	}
 
 	if(o.morph_targets)
@@ -13214,7 +13710,7 @@ Mesh.prototype.toBinary = function( options )
 	}
 
 	//bounding box
-	if(!this.bounding)	
+	if(!this.bounding)
 		this.updateBoundingBox();
 	o.bounding = this.bounding;
 
@@ -13246,7 +13742,7 @@ Mesh.prototype.toBinary = function( options )
 		GL.Mesh.compress( o );
 
 	//create pack file
-	var bin = WBin.create( o, "Mesh" ); 
+	var bin = WBin.create( o, "Mesh" );
 	return bin;
 }
 
@@ -13290,7 +13786,7 @@ Mesh.compressors["bounding_compressed"] = function(o)
 		new_vertices[i+1] = ((vertices[i+1] - min[1]) / range[1]) * 65535;
 		new_vertices[i+2] = ((vertices[i+2] - min[2]) / range[2]) * 65535;
 	}
-	o.vertices = new_vertices;		
+	o.vertices = new_vertices;
 
 	if( o.normals )
 	{
@@ -13371,7 +13867,7 @@ Mesh.decompressors["bounding_compressed"] = function(o)
 		new_vertices[i+1] = ((vertices[i+1] * inv16) * range[1]) + min[1];
 		new_vertices[i+2] = ((vertices[i+2] * inv16) * range[2]) + min[2];
 	}
-	o.vertices = new_vertices;		
+	o.vertices = new_vertices;
 
 	if( o.normals && o.normals.constructor != Float32Array )
 	{

@@ -31,7 +31,9 @@ function Timeline( options )
 	this.scroll_curves_y = 0;
 	this.curves_scale_y = 1;
 	this._selection_rectangle = null;
+	this._prev_mouse = [0,0];
 
+	this.background = null; //used to render stuff in the background of the timeline
 }
 
 Timeline.widget_name = "Timeline";
@@ -47,7 +49,7 @@ Timeline.createDialog = function( parent )
 	dialog.widget = widget;
 	dialog.on_close = function()
 	{
-		//widget.unbindEvents();		
+		//widget.unbindEvents();
 	}
 	return dialog;
 }
@@ -103,7 +105,7 @@ Timeline.prototype.createInterface = function( options )
 	//this.play_widget = widgets.addCheckbox("Play", !!this.playing, { callback: function(v){ that.playing = !that.playing ; } } );
 	widgets.addButton(null, "Edit", { width: 60, callback: function(){ that.mode = that.mode == "keyframes" ? "curves" : "keyframes"; that.redrawCanvas(); } } );
 	this.preview_widget = widgets.addIcon(null, !!this.preview, { image: "imgs/icons-timeline.png", index: 6, title:"preview",  callback: function(v){ that.preview = !that.preview ; } } );
-	this.play_widget = widgets.addIcon(null, !!this.playing, { title:"play", image: "imgs/icons-timeline.png",  callback: function(v){ that.playing = !that.playing ; } } );
+	this.play_widget = widgets.addIcon(null, !!this.playing, { title:"play", image: "imgs/icons-timeline.png",  callback: function(v){ that.playPreview(v); } });
 	widgets.addIcon(null, false, { title:"zoom in", image: "imgs/icons-timeline.png", index: 8, toggle: false, callback: function(v){ that.zoom(1.05); 	that.redrawCanvas(); } } );
 	widgets.addIcon(null, false, { title:"zoom out", image: "imgs/icons-timeline.png", index: 7, toggle: false, callback: function(v){ that.zoom(0.95); that.redrawCanvas(); } } );
 	widgets.addIcon(null, false, { title:"previous keyframe", image: "imgs/icons-timeline.png", index: 2, toggle: false, callback: function(v){ that.prevKeyframe(); } } );
@@ -117,7 +119,7 @@ Timeline.prototype.createInterface = function( options )
 	/*
 	this.property_widget = widgets.addString("Property", "", { disabled: true, width: "auto" } );
 	this.property_widget.style.marginLeft = "10px";
-	this.interpolation_widget = widgets.addCombo("Interpolation", "none", { values: Timeline.interpolation_values, width: 200, callback: function(v){ 
+	this.interpolation_widget = widgets.addCombo("Interpolation", "none", { values: Timeline.interpolation_values, width: 200, callback: function(v){
 		if( !that.current_track || that.current_track.interpolation == v )
 			return;
 		if( that.current_track.isInterpolable() )
@@ -139,15 +141,15 @@ Timeline.prototype.createInterface = function( options )
 	this.canvas.addEventListener("mousemove", this.onMouse.bind(this) );
 	this.canvas.addEventListener("mousewheel", this.onMouseWheel.bind(this), false );
 	this.canvas.addEventListener("wheel", this.onMouseWheel.bind(this), false );
-	this.canvas.addEventListener("contextmenu", (function(e) { 
+	this.canvas.addEventListener("contextmenu", (function(e) {
 		if(e.button != 2) //right button
 			return false;
 		this.onContextMenu(e);
-		e.preventDefault(); 
+		e.preventDefault();
 		return false;
 	}).bind(this));
 
-	this.root.addEventListener("DOMNodeInsertedIntoDocument", function(){ 
+	this.root.addEventListener("DOMNodeInsertedIntoDocument", function(){
 		that.resetView();
 	});
 
@@ -181,6 +183,25 @@ Timeline.prototype.resetView = function()
 
 	this.session.seconds_to_pixels = ( w - this.session.left_margin - 50 ) / duration;
 	this.redrawCanvas();
+}
+
+Timeline.prototype.playPreview = function(v){
+
+	if(v === undefined)
+		v = !this.playing;
+	this.playing = v;
+	if( this.background && this.background.audio && this.background.audio.duration)
+	{
+		if(this.playing)
+		{
+			this.background.audio.currentTime = this._timeline_data.current_time;
+			this.background.audio.play();
+		}
+		else
+		{
+			this.background.audio.pause();
+		}
+	}
 }
 
 Timeline.prototype.onNewAnimation = function( name, duration, folder )
@@ -424,6 +445,7 @@ Timeline.prototype.redrawCanvas = function()
 	var take = this.current_take;
 	var margin = this.session ? this.session.left_margin : 200;
 	var timeline_height = this.canvas_info.timeline_height;
+	var data = this._timeline_data;
 
 	if(!this.current_take)
 	{
@@ -441,6 +463,16 @@ Timeline.prototype.redrawCanvas = function()
 
 	//draw tracks info in the left side
 	this.drawTracksSidebar( canvas, ctx );
+
+	//render audio wave (useful sometimes)
+	if(this.background && this.background.img )
+	{
+		var x = this.canvasTimeToX(0);
+		var img = this.background.img;
+		ctx.imageSmoothingEnabled = false;
+		ctx.drawImage( img, x, this.canvas.height - img.height, data.seconds_to_pixels * img.width / 120, img.height * 2);
+		ctx.imageSmoothingEnabled = true;
+	}
 
 	//main content ***********************************
 	if(this.show_keyframes)
@@ -573,7 +605,7 @@ Timeline.prototype.drawCurvesView = function( canvas, ctx )
 		offset = 100;
 	else if(this.curves_scale_y < 20)
 		offset = 10;
-	else 
+	else
 		offset = 1;
 	for(var i = 0; i < 5; ++i)
 	{
@@ -625,7 +657,7 @@ Timeline.prototype.drawCurvesView = function( canvas, ctx )
 				}
 				ctx.stroke();
 			}
-			else 
+			else
 			{
 				for(var j = 0; j < track.value_size && j <= 7; ++j) //limit to 7 values (useful for trans10)
 				{
@@ -723,7 +755,7 @@ Timeline.prototype.drawKeyframesView = function( canvas, ctx )
 
 	//clip right side, disabled, very slow!
 	//ctx.rect( this.session.left_margin, 0, canvas.width - this.session.left_margin, canvas.height );
-	//ctx.clip(); 
+	//ctx.clip();
 
 	var timeline_keyframe_lines = [];
 
@@ -933,7 +965,6 @@ Timeline.prototype.drawTracksSidebar = function( canvas, ctx )
 	ctx.fillRect( margin, timeline_height, canvas.width - margin, canvas.height - timeline_height );
 	ctx.globalAlpha = 1;
 
-
 	//bg lines
 	ctx.strokeStyle = "#444";
 	ctx.beginPath();
@@ -1048,7 +1079,7 @@ Timeline.prototype.setCurrentTime = function( time, skip_redraw )
 	//console.log( t, this.session.current_time );
 
 	//auto scroll when the cursor exits
-	if( this._timeline_data && time > this._timeline_data.end_time ) 
+	if( this._timeline_data && time > this._timeline_data.end_time )
 		this.session.start_time += this._timeline_data.end_time;
 
 	//redraw only if visible
@@ -1056,7 +1087,7 @@ Timeline.prototype.setCurrentTime = function( time, skip_redraw )
 		this.redrawCanvas();
 
 	//preview: apply track samples to scene
-	if(this.current_take) // && this.preview 
+	if(this.current_take) // && this.preview
 	{
 		//recording is special case
 		if(this.recording && this._recording_time >= 0)
@@ -1085,6 +1116,9 @@ Timeline.prototype.setCurrentTime = function( time, skip_redraw )
 		this.session.last_time = this.session.current_time;
 		LS.GlobalScene.refresh();
 	}
+
+	if( this.background && this.background.audio && this.background.audio.duration && this.playing && Math.abs( this.background.audio.currentTime - time) > 0.1 )
+		this.background.audio.currentTime = time;
 }
 
 Timeline.prototype.applyPreview = function()
@@ -1175,7 +1209,7 @@ Timeline.prototype.update = function( dt )
 			this.setCurrentTime( time ); //apply changes if preview is on
 		}
 	}
-	
+
 	if(this.playing)
 	{
 		var time = this.session.current_time + dt;
@@ -1214,6 +1248,10 @@ Timeline.prototype.onMouse = function(e)
 	e.mousey = e.pageY - b.top;
 	e.canvasx = e.mousex;
 	e.canvasy = b.height - e.mousey;
+	e.deltax = e.mousex - this._prev_mouse[0];
+	e.deltay = e.mousey - this._prev_mouse[1];
+	this._prev_mouse[0] = e.mousex;
+	this._prev_mouse[1] = e.mousey;
 
 	var item = this.getMouseItem(e);
 	this.canvas.style.cursor = item ? item.cursor : "default";
@@ -1231,7 +1269,7 @@ Timeline.prototype.onMouse = function(e)
 
 		if(item) //something below the mouse (could be keyframe or track or background)
 		{
-			console.log(item);
+			//console.log(item);
 
 			if (e.ctrlKey && item.type == "background")
 			{
@@ -1240,12 +1278,12 @@ Timeline.prototype.onMouse = function(e)
 			else
 			{
 				//on double click
-				if( this._last_click_time && ( now - this._last_click_time ) < 200 ) 
+				if( this._last_click_time && ( now - this._last_click_time ) < 200 )
 				{
 					var time = this.session.current_time;
 					var track = take.tracks[ item.track ];
 					if( item.type == "keyframe" && track )
-					{	
+					{
 						if( track.type == "events")
 							this.showAddEventKeyframeDialog( track, time, track.getKeyframe( item.keyframe ) );
 						else
@@ -1257,18 +1295,25 @@ Timeline.prototype.onMouse = function(e)
 				}
 				else //first click
 				{
-					if( this.session.selection && this.session.selection.type == "keyframes" && this.session.selection.hashed[ item.track * 10000 + item.keyframe ] )
+					if(e.mousex > this.session.left_margin )
 					{
-						//start dragging multiple keyframes
-						console.log("saving undo of take");
-						this.addUndoTakeEdited(take.serialize());
-					}
-					else
-						this.session.selection = item;
-					if(this.mode == "keyframes") //changes time on keyframe selection
-					{
-						var time = this.canvasXToTime( e.mousex );
-						this.setCurrentTime( time );
+						if( this.session.selection && this.session.selection.type == "keyframes" && this.session.selection.hashed[ item.track * 10000 + item.keyframe ] )
+						{
+							//start dragging multiple keyframes
+							console.log("saving undo of take");
+							this.addUndoTakeEdited(take.serialize());
+						}
+						else if(item.type == "background" ) //special case
+						{
+							this.dragging_background = true;
+						}
+						else
+							this.session.selection = item;
+						if(this.mode == "keyframes" && item && item.type =="keyframe") //changes time on keyframe selection
+						{
+							var time = this.canvasXToTime( e.mousex );
+							this.setCurrentTime( time );
+						}
 					}
 				}
 
@@ -1329,11 +1374,27 @@ Timeline.prototype.onMouse = function(e)
 				}
 				else if( this._item_dragged.type == "keyframe" )
 				{
-					var newt = this.canvasXToTime( e.mousex );
-					newt = Math.round( newt * this.framerate ) / this.framerate; //round
 					var track = take.tracks[ this._item_dragged.track ];
 					if(track.packed_data)
 						track.unpackData();
+
+					if(e.ctrlKey)
+					{
+						var keyframe = track.data[this._item_dragged.keyframe];
+						if(track.value_size == 1)
+							keyframe[1] += e.deltay * 0.02;
+						else for(var k = 0; k < track.value_size; ++k)
+							keyframe[1][k] *= 1 + e.deltay * 0.02;
+						this.animationModified();
+						if(this.preview)
+							this.applyPreview();
+						e.preventDefault();
+						e.stopPropagation();
+						return;
+					}
+
+					var newt = this.canvasXToTime( e.mousex );
+					newt = Math.round( newt * this.framerate ) / this.framerate; //round
 					//set new time
 					var keyframe = track.data[this._item_dragged.keyframe];
 					var diff = newt - keyframe[0];
@@ -1388,20 +1449,38 @@ Timeline.prototype.onMouse = function(e)
 					else //single keyframe
 					{
 						keyframe[0] = newt;
-						if( this.mode =="curves" && this._item_dragged.value_index >= 0 )
+						if( this.mode =="curves" && this._item_dragged.value_index >= 0 ) //dragging values
 						{
 							var v = this.convertCanvasToValue( e.mousey );
 							if(track.value_size == 1)
 								keyframe[1] = v;
-							else if(track.value_size > 1 && this._item_dragged.value_index < track.value_size)
-								keyframe[1][this._item_dragged.value_index] = v;
-							if(track._type_index == LS.TYPES_INDEX.TRANS10 )
+							else if(track.value_size > 1)
 							{
-								var q = keyframe[1].subarray(3,7);
-								quat.normalize( q,q );
+								if(!track.packed_data)
+								{
+									if(this._item_dragged.value_index < track.value_size)
+										keyframe[1][this._item_dragged.value_index] = v;
+									if(track._type_index == LS.TYPES_INDEX.TRANS10 )
+									{
+										var q = keyframe[1].subarray(3,7);
+										quat.normalize( q,q );
+									}
+									else if(track._type_index == LS.TYPES_INDEX.QUAT )
+										quat.normalize( keyframe[1], keyframe[1] );
+								}
+								else
+								{
+									if(this._item_dragged.value_index < track.value_size)
+										keyframe[1+this._item_dragged.value_index] = v;
+									var q = null;
+									if(track._type_index == LS.TYPES_INDEX.TRANS10 )
+										q = keyframe.subarray(4,8);
+									else if(track._type_index == LS.TYPES_INDEX.QUAT )
+										q = keyframe.subarray(1,5);
+									if(q) //quaternions must be normalized
+										quat.normalize( q, q );
+								}
 							}
-							else if(track._type_index == LS.TYPES_INDEX.QUAT )
-								quat.normalize( keyframe[1], keyframe[1] );
 						}
 
 						track.sortKeyframes();
@@ -1430,7 +1509,7 @@ Timeline.prototype.onMouse = function(e)
 					*/
 
 				}
-				else if( this._item_dragged.type == "background" )
+				else if( this._item_dragged.type == "background" || this.dragging_background)
 				{
 					//*
 					var old = this.canvasXToTime( this.prev_mouse[0] );
@@ -1455,6 +1534,7 @@ Timeline.prototype.onMouse = function(e)
 		var ref_window = LiteGUI.getElementWindow(this.canvas);
 		ref_window.document.body.removeEventListener("mousemove", this._binded_mouseup );
 		ref_window.document.body.removeEventListener("mouseup", this._binded_mouseup );
+		this.dragging_background = false;
 
 		if( this._selection_rectangle )
 		{
@@ -1474,7 +1554,9 @@ Timeline.prototype.onMouse = function(e)
 			this.selectRegion( r );
 			this._selection_rectangle = null;
 		}
-
+		if( ( now - this._last_click_time ) < 200 ) { //fast click
+			this.session.selection = item;
+		}
 
 		if(this.preview && this._item_dragged && this._item_dragged.type == "timeline")
 			EditorModule.refreshAttributes();
@@ -1500,8 +1582,11 @@ Timeline.prototype.onKeyDown = function(e)
 {
 	switch( e.keyCode )
 	{
+		case 32:
+			this.playPreview();
+			break;
 		case 8:
-		case 46: //delete key 
+		case 46: //delete key
 			this.removeSelection();
 			break;
 		default:
@@ -1609,9 +1694,9 @@ Timeline.prototype.onMouseWheel = function(e)
 		if( this.mode == "curves" && e.mousey > this.canvas_info.timeline_height )
 		{
 			if(e.deltaY > 0)
-				this.curves_scale_y *= 0.95;
+				this.curves_scale_y *= e.shiftKey ? 0.5 : 0.95;
 			else
-				this.curves_scale_y *= 1.05;
+				this.curves_scale_y *= e.shiftKey ? 2 : 1.05;
 		}
 		else //keyframes
 		{
@@ -1635,6 +1720,10 @@ Timeline.prototype.showOptionsContextMenu = function( e )
 {
 	var that = this;
 	var options = ["New Animation","Load Animation","Scene Animation",null,"Prettify Names","Baking Tools"];
+
+	if(this.background)
+		options.push("Remove Background");
+
 	var animation_options = { title: "Animation Options", disabled: !this.current_take };
 	options.push( animation_options );
 
@@ -1652,6 +1741,13 @@ Timeline.prototype.showOptionsContextMenu = function( e )
 			that.onPrettifyNames();
 		else if(v == "Baking Tools")
 			that.onShowBakingDialog();
+		else if(v == "Remove Background")
+		{
+			if(that.background && that.background.audio)
+				that.background.audio.pause();
+			that.background = null;
+			that.redrawCanvas();
+		}
 		else if(v == animation_options)
 			that.onShowAnimationOptionsDialog();
 		else if(v.callback)
@@ -1689,7 +1785,7 @@ Timeline.prototype.onContextMenu = function( e )
 
 	values.push( { title: "Add New Track", callback: this.showNewTrack.bind(this) } );
 	values.push( { title: "Mark tracks of selected node", callback: this.selectTracksOfNode.bind(this) } );
-	values.push( { title: "Assign Node Names", callback: this.assignNodeNames.bind(this) } );
+	values.push( { title: "Beautify Names", callback: this.beautifyNames.bind(this) } );
 	values.push( null );
 
 	if(item.type == "keyframe" && track.type == "events")
@@ -1784,7 +1880,7 @@ Timeline.prototype.onContextMenu = function( e )
 	{
 		if(!track || !that.session.selection || that.session.selection.type != "keyframe" )
 			return;
-		
+
 		var keyframe_data = track.getKeyframe( that.session.selection.keyframe );
 		if(!keyframe_data)
 			return;
@@ -1835,7 +1931,7 @@ Timeline.prototype.onContextMenu = function( e )
 	{
 		that.showAddEventKeyframeDialog(track, time, track.getKeyframe( item.keyframe ) );
 	}
-	
+
 }
 
 Timeline.prototype.addUndoAnimationEdited = function( animation )
@@ -1858,7 +1954,7 @@ Timeline.prototype.addUndoTakeEdited = function( info )
 	if( this.current_animation.filename )
 		animation_filename = this.current_animation.fullpath || this.current_animation.filename;
 
-	UndoModule.addUndoStep({ 
+	UndoModule.addUndoStep({
 		title: "Take edited",
 		data: { animation: animation_filename, take: info.name, data: info, selection: selection },
 		callback_undo: function(d) {
@@ -1903,7 +1999,7 @@ Timeline.prototype.addUndoTrackCreated = function( track )
 
 	var that = this;
 
-	UndoModule.addUndoStep({ 
+	UndoModule.addUndoStep({
 		title: "Track created: " + track.name,
 		data: { animation: that.current_animation.name, take: that.current_take.name, index: that.current_take.tracks.indexOf( track ) },
 		callback_undo: function(d) {
@@ -1942,7 +2038,7 @@ Timeline.prototype.addUndoTrackEdited = function( track )
 
 	var that = this;
 
-	UndoModule.addUndoStep({ 
+	UndoModule.addUndoStep({
 		title: "Track edited: " + track.name,
 		data: { animation: that.current_animation.name, take: that.current_take.name, track: track.serialize(), index: that.current_take.tracks.indexOf( track ) },
 		callback_undo: function(d) {
@@ -1995,7 +2091,7 @@ Timeline.prototype.addUndoTrackRemoved = function( tracks )
 		tracks_data.push([ this.current_take.tracks.indexOf( track ), track.serialize()] );
 	}
 
-	UndoModule.addUndoStep({ 
+	UndoModule.addUndoStep({
 		title: tracks.length > 1 ? "Tracks removed" : "Track removed: " + tracks[0].name,
 		data: { animation: that.current_animation.name, take: that.current_take.name, tracks_data: tracks_data },
 		callback_undo: function(d) {
@@ -2373,7 +2469,7 @@ Timeline.prototype.getMouseItem = function( e )
 				this._must_redraw = true;
 				RenderModule.requestFrame();
 			}
-			else 
+			else
 				return { type: "button", action: "toggle_all_tracks_enabled", cursor: "pointer" };
 		}
 
@@ -2436,7 +2532,7 @@ Timeline.prototype.getMouseItem = function( e )
 
 	if(keyframe_index == -1)
 		return { type: "background", track: track_index, draggable: true };
-	
+
 	var keyframe = track.getKeyframe( keyframe_index );
 	if(!keyframe) //weird bugs happend sometimes
 		return null;
@@ -2477,7 +2573,7 @@ Timeline.prototype.getMouseItem = function( e )
 /* trajectories are rendered from the AnimationModule
 Timeline.prototype.renderEditor = function()
 {
-	
+
 }
 */
 
@@ -2551,7 +2647,7 @@ Timeline.prototype.onShowAnimationOptionsDialog = function()
 	}
 
 	dialog = new LiteGUI.Dialog({ id: "animation_options", title:"Animation Options", width: 400, draggable: true, closable: true });
-	
+
 	var widgets = new LiteGUI.Inspector();
 	widgets.addString("Name", this.current_animation.filename, { disabled: true } );
 	widgets.addInfo("Tracks", this.current_take.tracks.length );
@@ -2566,7 +2662,7 @@ Timeline.prototype.onShowAnimationOptionsDialog = function()
 
 	var action = values[0];
 	widgets.addCombo("Actions", action,{ values: values, width: "80%", callback: function(v){
-		action = v;	
+		action = v;
 	}});
 
 	widgets.addButton(null,"Go",{ width: "20%", callback: function(){
@@ -2587,7 +2683,7 @@ Timeline.prototype.onShowAnimationOptionsDialog = function()
 	widgets.widgets_per_row = 2;
 	var interpolation = Timeline.interpolation_values["linear"];
 	widgets.addCombo("Set Interpolation to all tracks", interpolation, { values: Timeline.interpolation_values, width: "80%", callback: function(v){
-		interpolation = v;	
+		interpolation = v;
 	}});
 
 	widgets.addButton(null,"Go",{ width: "20%", callback: function(){
@@ -2598,10 +2694,10 @@ Timeline.prototype.onShowAnimationOptionsDialog = function()
 	}});
 	widgets.widgets_per_row = 1;
 
-	
+
 	widgets.addSeparator();
 	widgets.addButton(null,"Close", function(){
-		dialog.close();	
+		dialog.close();
 	});
 
 	dialog.add( widgets );
@@ -2663,7 +2759,7 @@ Timeline.prototype.onShowBakingDialog = function()
 
 	widgets.addSeparator();
 	widgets.addButton(null,"Close", function(){
-		dialog.close();	
+		dialog.close();
 	});
 
 	dialog.add( widgets );
@@ -2684,7 +2780,7 @@ Timeline.prototype.showNewAnimationDialog = function()
 	}
 
 	dialog = new LiteGUI.Dialog({ id: "new_animation", title:"New Timeline", draggable: true, closable: true });
-	
+
 	var widgets = new LiteGUI.Inspector();
 	widgets.addString("Name","test");
 	widgets.addFolder("Folder","");
@@ -2708,7 +2804,7 @@ Timeline.prototype.showNewAnimationDialog = function()
 	dialog.show( null, this.root );
 }
 
-Timeline.prototype.assignNodeNames = function()
+Timeline.prototype.beautifyNames = function()
 {
 	if(!this.current_take)
 		return;
@@ -2723,7 +2819,11 @@ Timeline.prototype.assignNodeNames = function()
 		var node = info.node;
 		if(!node)
 			continue;
-		track.name = track.getIDasName() || track.property;
+		track.name = "";
+		if(info.component && info.component.getPrettyName)
+			track.name = info.component.getPrettyName( info, track._property, track._property_path );
+		if(!track.name)
+			track.name = track.getIDasName() || track.property;
 	}
 	this.redrawCanvas();
 }
@@ -2757,14 +2857,14 @@ Timeline.prototype.showNewTrack = function()
 {
 	var that = this;
 	var dialog = new LiteGUI.Dialog({ id: "new_animation_track", title:"New Track", width: 500, draggable: true, closable: true });
-	
+
 	var locator = "";
 	var info = null;
 	var value_size = 0;
 
 	var widgets = new LiteGUI.Inspector();
 	widgets.addString("Name", "mytrack");
-	widgets.addString("Property", "", function(v){ 
+	widgets.addString("Property", "", function(v){
 		locator = v;
 		info = LS.GlobalScene.getPropertyInfo( locator );
 		if(!info)
@@ -2834,7 +2934,7 @@ Timeline.prototype.showTrackOptionsDialog = function( track )
 {
 	var that = this;
 	var dialog = new LiteGUI.Dialog( { id: "track options", title:"Track Options", width: 500, draggable: true, closable: true });
-	
+
 	var widgets = new LiteGUI.Inspector();
 	widgets.on_refresh = inner_refresh;
 	inner_refresh();
@@ -2842,16 +2942,16 @@ Timeline.prototype.showTrackOptionsDialog = function( track )
 	function inner_refresh(){
 		widgets.clear();
 
-		widgets.addCheckbox("Enabled", track.enabled, function(v){ 
+		widgets.addCheckbox("Enabled", track.enabled, function(v){
 			track.enabled = v; that.redrawCanvas();
 			that.animationModified();
 		});
-		widgets.addString("Name", track.name, function(v){ 
+		widgets.addString("Name", track.name, function(v){
 			track.name = v; that.redrawCanvas();
 			that.animationModified();
 		});
 
-		widgets.addCheckbox("Packed Data", track.packed_data, function(v){ 
+		widgets.addCheckbox("Packed Data", track.packed_data, function(v){
 			if(v)
 				track.packData();
 			else
@@ -2861,7 +2961,7 @@ Timeline.prototype.showTrackOptionsDialog = function( track )
 
 		widgets.widgets_per_row = 2;
 
-		widgets.addString("Property", track.property, { width: "70%", callback: function(v){ 
+		widgets.addString("Property", track.property, { width: "70%", callback: function(v){
 			var info = track.getPropertyInfo();
 			if(info && info.type != track.type && track.getNumberOfKeyframes() )
 				LiteGUI.alert("Cannot change to a property with different type if you have keyframes, types do not match.");
@@ -2883,7 +2983,7 @@ Timeline.prototype.showTrackOptionsDialog = function( track )
 			}});
 
 		widgets.addString("Type", track.type, { disabled: true } );
-		widgets.addCombo("Interpolation", track.interpolation, { disabled: !track.isInterpolable(), values: Timeline.interpolation_values, callback: function(v){ 
+		widgets.addCombo("Interpolation", track.interpolation, { disabled: !track.isInterpolable(), values: Timeline.interpolation_values, callback: function(v){
 			if(track.interpolation == v)
 				return;
 			track.interpolation = v;
@@ -2893,7 +2993,7 @@ Timeline.prototype.showTrackOptionsDialog = function( track )
 		widgets.widgets_per_row = 1;
 
 		widgets.addButtons(null, ["Add keyframe"], { callback: function(v){
-			track.addKeyframeFromCurrent( that.current_time );		
+			track.addKeyframeFromCurrent( that.current_time );
 			that.animationModified();
 		}});
 
@@ -2941,7 +3041,7 @@ Timeline.prototype.showAddEventKeyframeDialog = function( track, time, keyframe 
 				continue;
 			values.push(i);
 		}
-		widgets.addCombo("Functions", event_name, { values: values, callback: function(v){ 
+		widgets.addCombo("Functions", event_name, { values: values, callback: function(v){
 			event_widget.setValue(v);
 			event_name = v;
 		}});
@@ -2990,8 +3090,7 @@ Timeline.prototype.showEditKeyframeDialog = function( track, time, keyframe, key
 	if( LiteGUI.Inspector.widget_constructors[ type ] )
 		widgets.add( type, "Value", value, { callback: function(v){
 			that.addUndoTrackEdited( track );
-			for(var i = 0; i < track.value_size; ++i)
-				keyframe[1][i] = v[i];
+			Timeline.assignKeyframeValue( track, keyframe, v );
 			if(preview)
 				that.applyPreview();
 			that.redrawCanvas();
@@ -3000,7 +3099,7 @@ Timeline.prototype.showEditKeyframeDialog = function( track, time, keyframe, key
 	else
 		widgets.addInfo( "Value", String( value ) );
 	widgets.addCheckbox("Preview", preview, function(v) { preview = v; } );
-	widgets.addButton("Delete", "Delete", function(v) { 
+	widgets.addButton("Delete", "Delete", function(v) {
 		track.removeKeyframe( keyframe_index );
 		that.redrawCanvas();
 		that.animationModified();
@@ -3012,6 +3111,29 @@ Timeline.prototype.showEditKeyframeDialog = function( track, time, keyframe, key
 	dialog.show( null, this.root );
 }
 
+Timeline.assignKeyframeValue = function(track,keyframe,v)
+{
+	if( track.value_size == 1 )
+		v = isNaN( Number(v) ) ? 0 : Number(v);
+	if(!track.packed_data)
+	{
+		if( track.value_size == 0 ) //strings,booleans,...
+			keyframe[1] = v;
+		else if( track.value_size == 1 ) //single values
+			keyframe[1] = v; //NaN controlled
+		else if( track.value_size > 1 )
+			for(var i = 0; i < track.value_size; ++i)
+				keyframe[1][i] = v[i];
+	}
+	else //packed
+	{
+		if( track.value_size == 1 ) //single values
+			keyframe[1] = v; //NaN controlled
+		else if( track.value_size > 1 )
+			for(var i = 0; i < track.value_size; ++i)
+				keyframe[1+i] = v[i];
+	}
+}
 
 Timeline.prototype.toggleRecording = function(v)
 {
@@ -3050,7 +3172,7 @@ Timeline.prototype.toggleRecording = function(v)
 		var elem = document.getElementById("timeline-recording-countdown");
 		if(elem)
 			elem.parentNode.removeChild(elem);
-	
+
 		this.preview_widget.setValue(true);
 		this.addUndoTakeEdited( this._recording_undo );
 		//this.cleanRepeatedKeyframes();
@@ -3091,7 +3213,7 @@ Timeline.prototype.showAddEventsTrack = function()
 {
 	var that = this;
 	var dialog = new LiteGUI.Dialog("events track",{ title:"Add Events Track", width: 500, draggable: true, closable: true });
-	
+
 	var widgets = new LiteGUI.Inspector();
 	widgets.addString("Name", "", function(v){ });
 	widgets.addNode("Node", "", function(v){ track.property = v; that.redrawCanvas(); });
@@ -3112,7 +3234,6 @@ Timeline.prototype.onItemDrop = function(e)
 	if(!this.current_animation)
 		this.onSceneAnimation(); //create scene animation
 
-
 	var type = e.dataTransfer.getData("type");
 	var locator = e.dataTransfer.getData("locator");
 	if(!locator && e.dataTransfer.getData("text/plain"))
@@ -3121,30 +3242,48 @@ Timeline.prototype.onItemDrop = function(e)
 	if( locator )
 	{
 		this.processInsertLocator( locator, { add_keyframe: false } );
-		/*
-		var info = LS.GlobalScene.getPropertyInfo( locator );
-		if(!info)
-			return;
-
-		var name = info.name;
-		if(!name && info.node)
-			name = info.node.name;
-
-		if( info.type == "component" || info.type == "node" || info.type == "object" )
-		{
-			this.createTrack({ name: name, locator: locator, type: "events" });
-		}
-		else
-		{
-			var type = info.type;
-			if(type == "object")
-				type = "events";
-			this.createTrack({ name: name, locator: locator, type: type });
-		}
-
-		this.animationModified();
-		*/
+		return;
 	}
+
+	if( type == "resource" )
+	{
+		var fullpath = e.dataTransfer.getData("res-fullpath");
+		var ext = LS.RM.getExtension(fullpath);
+		if(ext == "mp3" || ext == "wav" || ext == "ogg")
+		{
+			var url = LS.RM.getFullURL(fullpath);
+			this.setAudioBackground(url);
+		}
+		return;
+	}
+
+	if(e.dataTransfer.files.length)
+	{
+		var files = e.dataTransfer.files;
+		for(var i = 0; i < files.length; ++i)
+		{
+			var file = files[0];
+			var ext = LS.RM.getExtension(file.name);
+			if(ext == "mp3" || ext == "wav" || ext == "ogg")
+			{
+				var url = URL.createObjectURL(file);
+				this.setAudioBackground(url);
+			}
+		}
+	}
+}
+
+Timeline.prototype.setAudioBackground = function(url)
+{
+	var background = this.background = {};
+	var that = this;
+	Timeline.getAudioWaveImage(url, function(img){
+		background.img = img;
+		background.audio = new Audio();
+		background.audio.src = url;
+		background.audio.autoplay = false;
+		that.redrawCanvas();
+	});
 }
 
 //used for special actions
@@ -3209,6 +3348,16 @@ Timeline.actions.take["Remove scaling"] = function( animation, take )
 	return take.removeScaling();
 }
 
+Timeline.actions.take["Clear Keyframes"] = function( animation, take )
+{
+	for(var i = 0; i < take.tracks.length; ++i)
+	{
+		var track = take.tracks[i];
+		track.clear();
+	}
+	return 1;
+}
+
 Timeline.actions.take["Mask tracks with selected nodes"] = function( animation, take )
 {
 	var nodes = SelectionModule.getSelectedNodes();
@@ -3256,6 +3405,40 @@ Timeline.actions.take["Set prefix in tracks nodename"] = function( animation, ta
 	}
 }
 
+//in case some pesky NaN enters the animation values...
+Timeline.actions.take["Clear errors"] = function( animation, take )
+{
+	for(var i = 0; i < take.tracks.length; ++i)
+	{
+		var track = take.tracks[i];
+		if(track.packed_data)
+			track.unpackData();
+
+		for(var j = 0; j < track.data.length; ++j)
+		{
+			var keyframe = track.data[j];
+			if( isNaN( keyframe[0] ) ) //remove
+			{
+				track.data.splice(j,1);
+				j--;
+				continue;
+			}
+			if( track.value_size == 1 )
+			{
+				if( isNaN(keyframe[1] ) )
+					keyframe[1] = 0;
+			}
+			else if( track.value_size > 1 )
+			{
+				for(var k = 0; k < track.value_size; ++k)
+					if( isNaN(keyframe[1][k] ) )
+						keyframe[1][k] = 0;
+			}
+		}
+	}
+	return take.tracks.length;
+}
+
 //*****************
 
 Timeline.actions.track["Only rotations"] = function( track, take, animation )
@@ -3273,3 +3456,64 @@ Timeline.actions.track["Remove scaling"] = function( track, take, animation )
 	track.removeScaling();
 }
 
+//used to previsualize audio
+Timeline.wave_cache = {};
+Timeline.getAudioWaveImage = function( url, callback, onError )
+{
+	if(Timeline.wave_cache[url])
+		return Timeline.wave_cache[url];
+
+	window.AudioContext = window.AudioContext || window.webkitAudioContext;
+	var context = Timeline.audio_context;
+	if(!context)
+		context = Timeline.audio_context = new AudioContext();
+
+	Timeline.wave_cache[url] = 1;
+
+	var request = new XMLHttpRequest();
+	  request.open('GET', url, true);
+	  request.responseType = 'arraybuffer';
+
+	  // Decode asynchronously
+	  request.onload = function() {
+		context.decodeAudioData( request.response, function(buffer) {
+			var start_time = performance.now();
+			var canvas = document.createElement("canvas");
+			canvas.width = Math.round(buffer.duration * 120); //120 samples per second
+			canvas.height = 128;
+			var h2 = canvas.height / 2;
+			//document.body.appendChild(canvas);
+			var delta = (buffer.length / canvas.width);// * buffer.numberOfChannels;
+			var ctx = canvas.getContext("2d");
+			ctx.clearRect(0,0,canvas.width,canvas.height);
+			ctx.fillStyle = ctx.strokeStyle = "white";
+			var data = buffer.getChannelData(0);
+			var pos = 0;
+			var delta_ceil = Math.ceil(delta);
+			ctx.beginPath();
+			for(var i = 0; i < buffer.length; i += delta)
+			{
+				var min = 0;
+				var max = 0;
+				var start = Math.floor(i);
+				for(var j = 0; j < delta_ceil; ++j)
+				{
+					var v = data[j + start];
+					if(min > v) min = v;
+					if(max < v) max = v;
+				}
+				var y = (1 + min) * h2;
+				ctx.moveTo( pos, y );
+				ctx.lineTo( pos, y + h2 * (max - min) );
+				++pos;
+			}
+			ctx.stroke();
+			canvas.buffer = buffer;
+			Timeline.wave_cache[url] = canvas;
+			console.log( "wave image generation time: " + ((performance.now() - start_time)*0.001).toFixed(3) + "s");
+			if(callback)
+				callback(canvas,url);
+		}, onError);
+	  }
+	  request.send();
+}

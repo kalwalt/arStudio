@@ -954,6 +954,9 @@ var LS = {
 	*/
 	registerComponent: function( component, old_classname ) { 
 
+		//to know from what file does it come from
+		//console.log( document.currentScript.src );
+
 		//allows to register several at the same time
 		var name = LS.getClassName( component );
 
@@ -1777,11 +1780,19 @@ var LS = {
 	},
 
 	//we do it in a function to make it more standard and traceable
+	//used by the editor to show the error
 	dispatchCodeError: function( err, line, resource, extra )
 	{
 		var error_info = { error: err, line: line, resource: resource, extra: extra };
 		console.error(error_info);
 		LEvent.trigger( this, "code_error", error_info );
+	},
+
+	//used to tell the editor it must remove the error marker
+	dispatchNoErrors: function( resource, extra )
+	{
+		var info = { resource: resource, extra: extra };
+		LEvent.trigger( this, "code_no_errors", info );
 	},
 
 	convertToString: function( data )
@@ -2160,7 +2171,7 @@ LSQ.setFromInfo = function( info, value )
 	if( target.setPropertyValue  )
 		if( target.setPropertyValue( info.name, value ) === true )
 			return target;
-	if( target[ info.name ] === undefined )
+	if( target[ info.name ] === undefined && info.value === undefined )
 		return;
 	target[ info.name ] = value;	
 }
@@ -2314,6 +2325,11 @@ LS.RESOURCE_TYPES[ LS.TYPES.ANIMATION ] = true;
 
 //Events
 var EVENT = LS.EVENT = {};
+//events are defined in the file that triggers them:
+//- renderer.js: render related events (RENDER_INSTANCES,etc)
+//- scene.js: scene related (INIT,START,UPDATE)
+//- input.js: player related (MOUSEDOWN,KEYDOWN)
+
 
 /**
 * A Ray that contains an origin and a direction (it uses the Ray class from litegl, so to check documentation go to litegl doc
@@ -2576,7 +2592,10 @@ var Network = {
 			var script = document.createElement('script');
 			script.num = i;
 			script.type = 'text/javascript';
-			script.src = url[i];
+			var full_url = url[i].trim();
+			if(full_url.substr(0,5) != "blob:")
+				full_url += "?" + LS.RM.getNoCache(true);
+			script.src = full_url;
 			script.async = false;
 			//if( script.src.substr(0,5) == "blob:") //local scripts could contain utf-8
 				script.charset = "UTF-8";
@@ -2730,6 +2749,16 @@ LS.Network = Network;
 //mouse.mousey 0 is top
 //mouse.canvasy 0 is bottom
 //mouse.y is mousey
+
+EVENT.MOUSEDOWN = "mousedown";
+EVENT.MOUSEMOVE = "mousemove";
+EVENT.MOUSEUP = "mouseup";
+EVENT.MOUSEWHEEL = "mousewheel";
+EVENT.TOUCHSTART = "touchstart";
+EVENT.TOUCHMOVE = "touchmove";
+EVENT.TOUCHEND = "touchend";
+EVENT.KEYDOWN = "keydown";
+EVENT.KEYUP = "keyup";
 
 var Input = {
 	mapping: {
@@ -4287,7 +4316,7 @@ var ResourcesManager = {
 	resource_once_callbacks: {}, //callback called once
 
 	virtual_file_systems: {}, //protocols associated to urls  "VFS":"../"
-	skip_proxy_extensions: ["mp3","wav","ogg"], //this file formats should not be passed through the proxy
+	skip_proxy_extensions: ["mp3","wav","ogg","mp4","webm"], //this file formats should not be passed through the proxy
 	force_nocache_extensions: ["js","glsl","json"], //this file formats should be reloaded without using the cache
 	nocache_files: {}, //this is used by the editor to avoid using cached version of recently loaded files
 
@@ -4629,7 +4658,9 @@ var ResourcesManager = {
 				case 'https':
 					var full_url = url;
 					var extension = this.getExtension( url ).toLowerCase();
-					if(this.proxy && this.skip_proxy_extensions.indexOf( extension ) == -1 && (!options || (options && !options.ignore_proxy)) ) //proxy external files
+					var host = url.substr(0,url.indexOf("/",protocol.length + 3));
+					host = host.substr(protocol.length+3);
+					if(this.proxy && host != location.host && this.skip_proxy_extensions.indexOf( extension ) == -1 && (!options || (options && !options.ignore_proxy)) ) //proxy external files
 						return this.proxy + url; //this.proxy + url.substr(pos+3); //"://"
 					return full_url;
 					break;
@@ -5758,10 +5789,13 @@ LS.ResourcesManager.processImage = function( filename, data, options, callback )
 				texture._original_data = data;
 		}
 
-		if( !LS.ResourcesManager.keep_urls )
-			URL.revokeObjectURL( objectURL ); //free memory
-		else
-			texture._local_url = objectURL; //used in strange situations
+		if( objectURL )
+		{
+			if( !LS.ResourcesManager.keep_urls )
+				URL.revokeObjectURL( objectURL ); //free memory
+			else
+				texture._local_url = objectURL; //used in strange situations
+		}
 
 		if(callback)
 			callback(filename,texture,options);
@@ -7637,6 +7671,11 @@ Material.prototype.configure = function(o)
 */
 Material.prototype.serialize = function( simplified )
 {
+	//remove hardcoded data from containers before serializing
+	for(var i in this.textures)
+		if (this.textures[i] && this.textures[i].constructor === GL.Texture)
+			this.textures[i] = null;
+
 	var o = LS.cloneObject(this);
 	delete o.filename;
 	delete o.fullpath;
@@ -7772,8 +7811,13 @@ Material.prototype.setProperty = function( name, value )
 		case "textures":
 			for(var i in value)
 			{
-				var tex = value[i];
-				if( tex && tex.constructor === String )
+				var tex = value[i]; //sampler
+				if(tex == null)
+				{
+					delete this.textures[i];
+					continue;
+				}
+				if( tex.constructor === String )
 					tex = { texture: tex, uvs: 0, wrap: 0, minFilter: 0, magFilter: 0 };
 				tex._must_update = true;
 				this.textures[i] = tex;
@@ -7839,7 +7883,18 @@ Material.prototype.getPropertyInfoFromPath = function( path )
 		case "color": 
 			type = "vec3"; break;
 		case "textures":
-			type = "Texture"; break;
+			if( path.length > 1 )
+			{
+				return {
+					node: this._root,
+					target: this.textures,
+					name: path[1],
+					value: this.textures[path[1]] || null,
+					type: "Texture"
+				}
+			}
+			type = "Texture"; 
+			break;
 		default:
 			return null;
 	}
@@ -8235,6 +8290,8 @@ function ShaderMaterial( o )
 
 	this._version = -1;	
 
+	this._last_valid_properties = null; //used to recover from a shader error
+
 	if(o) 
 		this.configure(o);
 }
@@ -8414,6 +8471,14 @@ ShaderMaterial.prototype.processShaderCode = function()
 		return false;
 
 	var old_properties = this._properties_by_name;
+	if( shader_code._has_error ) //save them
+		this._last_valid_properties = old_properties; 
+	else if( this._last_valid_properties )
+	{
+		old_properties = this._last_valid_properties;
+		this._last_valid_properties = null;
+	}
+
 	this._properties.length = 0;
 	this._properties_by_name = {};
 	this._passes = {};
@@ -8466,6 +8531,7 @@ ShaderMaterial.prototype.processShaderCode = function()
 
 	//restore old values
 	this.assignOldProperties( old_properties );
+
 }
 
 //used after changing the code of the ShaderCode and wanting to reload the material keeping the old properties
@@ -8573,7 +8639,7 @@ ShaderMaterial.prototype.renderInstance = function( instance, render_settings, p
 
 		if( environment_texture )
 		{
-			var tex = LS.ResourcesManager.textures[ environment_texture ];
+			var tex = environment_texture.constructor === String ? LS.ResourcesManager.textures[ environment_texture ] : environment_texture;
 			if( tex && tex.texture_type == GL.TEXTURE_2D )
 			{
 				if( tex._is_planar )
@@ -8607,7 +8673,7 @@ ShaderMaterial.prototype.renderInstance = function( instance, render_settings, p
 
 	//for those cases
 	if(this.onRenderInstance)
-		this.onRenderInstance( instance );
+		this.onRenderInstance( instance, pass );
 
 	if( pass == SHADOW_PASS )
 	{
@@ -9094,6 +9160,23 @@ ShaderMaterial.prototype.createProperty = function( name, value, type, options )
 }
 
 /**
+* returns the value of a property taking into account dynamic properties defined in the material
+* @method getProperty
+* @param {String} name the property name as it should be shown
+* @param {*} value of the property
+*/
+ShaderMaterial.prototype.getProperty = function(name)
+{
+	var r = Material.prototype.getProperty.call( this, name );
+	if(r != null)
+		return;
+	var p = this._properties_by_name[ name ];
+	if (p)
+		return p.value;
+	return null;
+}
+
+/**
 * Event used to inform if one resource has changed its name
 * @method onResourceRenamed
 * @param {Object} resources object where all the resources are stored
@@ -9560,7 +9643,14 @@ StandardMaterial.prototype.fillUniforms = function( scene, options )
 		if(!sampler)
 			continue;
 
-		var texture = sampler.texture;
+		var texture = null;
+		
+		//hardcoded textures
+		if(sampler.constructor === GL.Texture)
+			texture = sampler;
+		else
+			texture = sampler.texture;
+
 		if(!texture)
 			continue;
 
@@ -11416,10 +11506,10 @@ ComponentContainer.prototype.configureComponents = function( info )
 	//this is to avoid problems with components that check if the node has other components and if not they create it
 	for(var i = 0, l = to_configure.length; i < l; i+=2)
 	{
+		var comp = to_configure[i];
+		var data = to_configure[i+1];
 		if(LS.catch_exceptions)
 		{
-			var comp = to_configure[i];
-			var data = to_configure[i+1];
 			try
 			{
 				comp.configure( data );
@@ -12994,6 +13084,7 @@ EVENT.AWAKE = "awake";
 EVENT.START = "start";
 EVENT.PAUSE = "pause";
 EVENT.UNPAUSE = "unpause";
+EVENT.FINISH = "finish";
 EVENT.BEFORE_UPDATE = "before_update";
 EVENT.UPDATE = "update";
 EVENT.FIXED_UPDATE = "fixedUpdate";
@@ -13004,7 +13095,6 @@ EVENT.COLLECT_LIGHTS = "collectLights";
 EVENT.COLLECT_CAMERAS = "collectCameras";
 EVENT.COLLECT_DATA = "collectData";
 EVENT.SERIALIZE = "serialize";
-EVENT.FINISH = "finish";
 EVENT.NODE_ADDED = "nodeAdded";
 EVENT.NODE_REMOVED = "nodeRemoved";
 EVENT.REQUEST_FRAME = "requestFrame";
@@ -13043,8 +13133,8 @@ function Scene()
 	//work in progress, not finished yet. This will contain all the objects in cells
 	this._spatial_container = new LS.SpatialContainer();
 
-	this.external_scripts = []; //external scripts that must be loaded before initializing the scene (mostly libraries used by this scene)
-	this.global_scripts = []; //scripts that are located in the resources folder and must be loaded before launching the app
+	this.external_scripts = []; //external scripts that must be loaded before initializing the scene (mostly libraries used by this scene) they do not have access to the data in the scene
+	this.global_scripts = []; //scripts that are located in the resources folder and must be loaded before launching the app. they have access to the scene data
 	this.preloaded_resources = {}; //resources that must be loaded, appart from the ones in the components
 
 	//track with global animations of the scene
@@ -13618,6 +13708,9 @@ Scene.getScriptsList = function( scene, allow_local, full_paths )
 			scripts.push( script_url );
 		}
 	}
+
+	scripts = scripts.map(function(a){ return a.trim(); }); //careful with spaces
+
 	return scripts;
 }
 
@@ -13666,6 +13759,7 @@ Scene.prototype.loadScripts = function( scripts, on_complete, on_error, force_re
 				continue;
 			}
 
+			//we use blobs because we have the data locally but we need to load it from an url (the script loader works like that)
 			var blob = new Blob([res.data],{encoding:"UTF-8", type: 'text/plain;charset=UTF-8'});
 			var objectURL = URL.createObjectURL( blob );
 			final_scripts.push( objectURL );
@@ -14209,7 +14303,23 @@ Scene.prototype.setPropertyValueFromPath = function( path, value, root_node, off
 	}
 
 	//get node
-	var node = root_node ? root_node.findNode( path[offset] ) : this.getNode( path[offset] );
+	var node = null;
+	if( root_node )
+	{
+		var name = path[offset];
+		if( name.indexOf("|") != -1)
+		{
+			var tokens = name.split("|");
+			var node = root_node;
+			for(var i = 0; i < tokens.length && node; ++i)
+				node = node.getChildByName( tokens[i] );
+		}
+		else
+			node = root_node.findNode( path[offset] );
+	}
+	else
+		node = this.getNode( path[offset] );
+
 	if(!node)
 		return null;
 
@@ -14904,7 +15014,21 @@ Scene.prototype.sendResourceRenamedEvent = function( old_name, new_name, resourc
 		{
 			var component = node._components[j];
 			if(component.onResourceRenamed)
-				component.onResourceRenamed( old_name, new_name, resource )
+				component.onResourceRenamed( old_name, new_name, resource );
+			else //automatic
+			{
+				for(var k in component)
+				{
+					if(component[k] != old_name )
+						continue;
+					var propinfo = component.constructor["@" + k];
+					if(!propinfo)
+						continue;
+					var type = propinfo.type || propinfo.widget;
+					if(type && (type == LS.TYPES.RESOURCE || LS.ResourceClasses[ type ])) //is a resource
+						component[k] = new_name;
+				}
+			}
 		}
 
 		//materials
@@ -14998,6 +15122,9 @@ function SceneNode( name )
 	this._children = null;
 	this._in_tree = null;
 	this._instances = []; //render instances
+
+	//bounding box in world space
+	//this._aabb = BBox.create();
 
 	//flags
 	this.flags = {
@@ -15696,8 +15823,26 @@ SceneNode.prototype.getResources = function( res, include_children )
 {
 	//resources in components
 	for(var i in this._components)
-		if( this._components[i].getResources )
-			this._components[i].getResources( res );
+	{
+		var comp = this._components[i];
+		if( comp.getResources )
+			comp.getResources( res );
+		else
+		{
+			//automatic
+			for(var j in comp)
+			{
+				if(!comp[j] || comp[j].constructor === Function || j[0] == "_")
+					continue;
+				var propinfo = comp.constructor["@" + j];
+				if(!propinfo)
+					continue;
+				var type = propinfo.type || propinfo.widget;
+				if(type && (type == LS.TYPES.RESOURCE || LS.ResourceClasses[ type ]) ) //is a resource
+					res[ comp[j] ] = LS.ResourceClasses[ type ];
+			}
+		}
+	}
 
 	//res in material
 	if(this.material)
@@ -16918,6 +17063,11 @@ function Take(o)
 	if(o)
 		this.configure(o);
 
+}
+
+Take.prototype.clear = function()
+{
+	this.tracks = [];
 }
 
 Take.prototype.configure = function( o )
@@ -19807,13 +19957,17 @@ ShaderCode.prototype.compileShader = function( vs_code, fs_code )
 		console.groupEnd();
 	}
 
+	var shader = null;
+
 	if(!LS.catch_exceptions)
-		return new GL.Shader( vs_code, fs_code );
+	{
+		shader = new GL.Shader( vs_code, fs_code );
+	}
 	else
 	{
 		try
 		{
-			return new GL.Shader( vs_code, fs_code );
+			shader = new GL.Shader( vs_code, fs_code );
 		}
 		catch(err)
 		{
@@ -19833,7 +19987,14 @@ ShaderCode.prototype.compileShader = function( vs_code, fs_code )
 			LS.dispatchCodeError( err, code_line, this, "shader" );
 		}
 	}
-	return null;
+
+	if(shader)
+	{
+		if( LS.debug )
+			console.log(" + shader compiled: ", this.fullpath || this.filename );
+		LS.dispatchNoErrors( this, "shader" );
+	}
+	return shader;
 }
 
 ShaderCode.prototype.clearCache =  function()
@@ -20270,7 +20431,7 @@ GraphCode.prototype.getShaderCode = function( as_string, template )
 	if(!this._shader_code)
 		this._shader_code = new LS.ShaderCode();
 
-	var output_node = this._graph.findNodesByClass("shader/output");
+	var output_node = this._graph.findNodesByClass("shader/output")[0];
 	if(!output_node)
 		return null;
 
@@ -20497,7 +20658,7 @@ if(typeof(LiteGraph) != "undefined")
 			enabled: true,
 			primitive: GL.TRIANGLES,
 			use_node_transform: true,
-			use_node_material: true,
+			use_node_material: true
 		};
 	}
 
@@ -20555,7 +20716,10 @@ if(typeof(LiteGraph) != "undefined")
 		//instancing
 		var instances = this.getInputData(3);
 		if(instances)
-			this._RI.instanced_models = instances;
+		{
+			//if(model == LS.IDENTITY) //if not multiply all by model?
+				this._RI.instanced_models = instances;
+		}
 		else
 			this._RI.instanced_models = null;
 		this._RI.use_bounding = !instances;
@@ -20694,6 +20858,7 @@ if(typeof(LiteGraph) != "undefined")
 
 	LGraphSceneNode.title = "SceneNode";
 	LGraphSceneNode.desc = "Node on the scene";
+	LGraphSceneNode.highlight_color = "#CCC";
 
 	LGraphSceneNode.prototype.onRemoved = function()
 	{
@@ -20716,14 +20881,23 @@ if(typeof(LiteGraph) != "undefined")
 		//first check input
 		if(this.inputs && this.inputs[0])
 			node_id = this.getInputData(0);
-		if(node_id)
+
+		//hardcoded node
+		if( node_id && node_id.constructor === LS.SceneNode )
+		{
+			if(this._node != node_id)
+				this.bindNodeEvents(node_id);
+			return node_id;
+		}
+
+		if(node_id && node_id.constructor === String)
 			this.properties.node_id = node_id;
 
 		//then check properties
 		if(	!node_id && this.properties.node_id )
 			node_id = this.properties.node_id;
 
-		if( node_id == "@" )
+		if( node_id == "@" || !node_id )
 		{
 			if( this.graph._scenenode )
 				return this.graph._scenenode;
@@ -20819,10 +20993,10 @@ if(typeof(LiteGraph) != "undefined")
 
 	LGraphSceneNode.prototype.onDrawBackground = function(ctx)
 	{
-		var node = this._node;
+		var node = this.getNode();
 		if(!node)
 		{
-			this.boxcolor = null;
+			this.boxcolor = "red";
 			return;
 		}
 
@@ -20830,10 +21004,10 @@ if(typeof(LiteGraph) != "undefined")
 
 		if(highlight)
 		{
-			this.boxcolor = "#FA0";
+			this.boxcolor = LGraphSceneNode.highlight_color;
 			if(!this.flags.collapsed)
 			{
-				ctx.fillStyle = "#FA0";
+				ctx.fillStyle = LGraphSceneNode.highlight_color;
 				ctx.fillRect(0,0,this.size[0],2);
 			}
 		}
@@ -21211,6 +21385,7 @@ if(typeof(LiteGraph) != "undefined")
 
 	LGraphLocatorProperty.title = "Property";
 	LGraphLocatorProperty.desc = "A property of a node or component of the scene specified by its locator string";
+	LGraphLocatorProperty.highlight_color = "#CCC";
 
 	LGraphLocatorProperty.prototype.getLocatorInfo = function( force )
 	{
@@ -21267,10 +21442,10 @@ if(typeof(LiteGraph) != "undefined")
 
 	LGraphLocatorProperty.prototype.onDrawBackground = function(ctx)
 	{
-		var info = this._last_info;
+		var info = this.getLocatorInfo();
 		if(!info)
 		{
-			this.boxcolor = null;
+			this.boxcolor = "red";
 			return;
 		}
 
@@ -21278,10 +21453,10 @@ if(typeof(LiteGraph) != "undefined")
 
 		if(highlight)
 		{
-			this.boxcolor = "#FA0";
-			if(!this.flags.collapsed)
+			this.boxcolor = LGraphLocatorProperty.highlight_color;
+			if(!this.flags.collapsed) //render line
 			{
-				ctx.fillStyle = "#FA0";
+				ctx.fillStyle = LGraphLocatorProperty.highlight_color;
 				ctx.fillRect(0,0,this.size[0],2);
 			}
 		}
@@ -21477,6 +21652,7 @@ if(typeof(LiteGraph) != "undefined")
 
 	LGraphComponent.title = "Component";
 	LGraphComponent.desc = "A component from a node";
+	LGraphComponent.highlight_color = "#CCC";
 
 	LGraphComponent.prototype.onRemoved = function()
 	{
@@ -21568,11 +21744,32 @@ if(typeof(LiteGraph) != "undefined")
 			this.setOutputData( slot, compo[ output.name ] );
 	}
 
-	LGraphComponent.prototype.onDrawBackground = function()
+	LGraphComponent.prototype.onDrawBackground = function(ctx)
 	{
 		var compo = this.getComponent();
-		if(compo)
+		if(compo && compo._root)
+		{
+			this.boxcolor = null;
+			var color = null;
+			if(compo._root._is_selected)
+				color = LGraphComponent.highlight_color;
+			if(compo._is_selected)
+				color = "#39F";
+
+			if(color)
+			{
+				this.boxcolor = color;
+				if(!this.flags.collapsed)
+				{
+					ctx.fillStyle = color;
+					ctx.fillRect(0,0,this.size[0],2);
+				}
+			}
+
 			this.title = LS.getClassName( compo.constructor );
+		}
+		else
+			this.boxcolor = "red";
 	}
 
 	LGraphComponent.prototype.onConnectionsChange = function( type, slot, created, link_info, slot_info )
@@ -23081,6 +23278,27 @@ if(typeof(LiteGraph) != "undefined")
 		area[1] = y;
 	}
 
+
+	function LGraphInputMouse()
+	{
+		this.addOutput("pos","vec2");
+		this.addOutput("left_button","boolean");
+		this.addOutput("right_button","boolean");
+		this.properties = {};
+	}
+
+	LGraphInputMouse.title = "Mouse";
+	LGraphInputMouse.desc = "Mouse state info";
+
+	LGraphInputMouse.prototype.onExecute = function()
+	{
+		this.setOutputData(0, LS.Input.Mouse.position );
+		this.setOutputData(1, LS.Input.Mouse.buttons & LS.Input.BUTTONS_LEFT );
+		this.setOutputData(2, LS.Input.Mouse.buttons & LS.Input.BUTTONS_RIGHT );
+	}
+
+	LiteGraph.registerNodeType("input/mouse", LGraphInputMouse );
+
 	//special kind of node
 	function LGraphGUIPanel()
 	{
@@ -23472,10 +23690,7 @@ if(typeof(LiteGraph) != "undefined")
 		this._area = vec4.create();
 		this._values = this.properties.values.split(";");
 		var that = this;
-		this.widget = this.addWidget("text","Options",this.properties.values,function(v){
-			that.properties.values = v;
-			that.onPropertyChanged("values",v);
-		});
+		this.widget = this.addWidget("text","Options",this.properties.values,"values");
 		this.size = [240,70];
 	}
 
@@ -23486,10 +23701,7 @@ if(typeof(LiteGraph) != "undefined")
 	LGraphGUIMultipleChoice.prototype.onPropertyChanged = function(name,value)
 	{
 		if(name == "values")
-		{
 			this._values = value.split(";");
-			this.widget.value = value;
-		}
 	}
 
 	LGraphGUIMultipleChoice.prototype.onAction = function(name, param)
@@ -24115,7 +24327,7 @@ if(typeof(LiteGraph) != "undefined")
 		this.addOutput("out","object");
 		this.points = [];	//2D points, name of point ("happy","sad") and weights ("mouth_left":0.4, "mouth_right":0.3)
 		this.current_weights = {}; //object that tells the current state of weights, like "mouth_left":0.3, ...
-		this.properties = { enabled: true };
+		this.properties = { enabled: true, dimensions: 1 };
 		var node = this;
 		this.combo = this.addWidget("combo","Point", "", function(v){
 			node._selected_point = node.findPoint(v);
@@ -24128,6 +24340,28 @@ if(typeof(LiteGraph) != "undefined")
 	}
 
 	LGraphRemapWeights.title = "Remap Weights";
+
+	LGraphRemapWeights.prototype.onPropertyChanged = function(name,value)
+	{
+		if(name != "dimensions" || this.properties.dimensions == value)
+			return;
+		this.properties.dimensions = value || 1;
+		var dim = this.properties.dimensions;
+		for(var i in this.current_weights)
+		{
+			if( this.current_weights[i] == null )
+			{
+				this.current_weights[i] = dim == 1 ? 0 : new Array(dim).fill(0);
+				continue;
+			}
+
+			if( this.current_weights[i].constructor === Number && dim == 1)
+				continue;
+
+			if( this.current_weights[i].length != dim )
+				this.current_weights[i] = new Array(dim).fill(0);
+		}
+	}
 
 	LGraphRemapWeights.prototype.onExecute = function()
 	{
@@ -24152,8 +24386,17 @@ if(typeof(LiteGraph) != "undefined")
 			}
 		}
 
+		//clear
+		var dimensions = this.properties.dimensions || 1;
 		for(var i in this.current_weights)
-			this.current_weights[i] = 0;
+		{
+			if( dimensions == 1 )
+				this.current_weights[i] = 0;
+			else if( !this.current_weights[i] || this.current_weights[i].length != dimensions )
+				this.current_weights[i] = new Array(dimensions).fill(0);
+			else
+				this.current_weights[i].fill(0);
+		}
 
 		var points_has_changed = false;
 		if( point_weights )
@@ -24166,11 +24409,19 @@ if(typeof(LiteGraph) != "undefined")
 				continue;
 			}
 			var w = point_weights[i]; //input
-			//for(var j = 0, l = point.weights.length; j < lw && j < l; ++j)
 			for(var j in point.weights)
 			{
-				var v = (point.weights[j] || 0) * w;
-				this.current_weights[j] += v;
+				if(dimensions == 1)
+				{
+					var v = (point.weights[j] || 0) * w;
+					this.current_weights[j] += v;
+				}
+				else
+					for(var k = 0; k < dimensions; ++k)
+					{
+						var v = point.weights[j][k] * w;
+						this.current_weights[j][k] += v;
+					}
 			}
 		}
 
@@ -24244,11 +24495,12 @@ if(typeof(LiteGraph) != "undefined")
 			this.graph.runStep(1,false, this.order );
 
 		var name_weights = this.getInputDataByName("name_weights");
+		var dimensions = this.properties.dimensions || 1;
 		
 		if(name_weights)
 		{
 			for(var j in name_weights)
-				this.current_weights[j] = name_weights[j];
+				this.current_weights[j] = dimensions == 1 ? name_weights[j] : name_weights[j].concat();
 		}
 		else //get from output
 		{
@@ -24269,7 +24521,7 @@ if(typeof(LiteGraph) != "undefined")
 				var compo_weights = component.name_weights;
 				var compo_weights = component.name_weights;
 				for(var j in compo_weights)
-					this.current_weights[j] = compo_weights[j];
+					this.current_weights[j] = dimensions == 1 ? compo_weights[j] : name_weights[j].concat();
 			}
 		}
 
@@ -24279,7 +24531,7 @@ if(typeof(LiteGraph) != "undefined")
 			return;
 		this._selected_point.weights = {};
 		for(var i in this.current_weights)
-			this._selected_point.weights[i] = this.current_weights[i];
+			this._selected_point.weights[i] = dimensions == 1 ? this.current_weights[i] : this.current_weights[i].concat();
 	}
 
 	LGraphRemapWeights.prototype.findPoint = function( name )
@@ -24292,8 +24544,10 @@ if(typeof(LiteGraph) != "undefined")
 
 	LGraphRemapWeights.prototype.assignCurrentWeightsToPoint = function( point )
 	{
+		var dimensions = this.properties.dimensions || 1;
 		for(var i in this.current_weights)
-			point.weights[i] = this.current_weights[i];
+			if( dimensions == 1 )
+				point.weights[i] = dimensions == 1 ? this.current_weights[i] : this.current_weights[i].concat();
 	}
 
 	LGraphRemapWeights.prototype.onSerialize = function(o)
@@ -24303,22 +24557,38 @@ if(typeof(LiteGraph) != "undefined")
 		o.enabled = this.enabled;
 	}
 
+	LGraphRemapWeights.prototype.removeWeight = function( name )
+	{
+		for(var i = 0; i < this.points.length; ++i)
+			delete this.points[i].weights[name];
+		delete this.current_weights[name];
+	}
+
 	LGraphRemapWeights.prototype.onConfigure = function(o)
 	{
 		if(o.enabled !== undefined)
 			this.properties.enabled = o.enabled;
 		if( o.current_weights )
 			this.current_weights = o.current_weights;
+		this.properties.dimensions = o.properties.dimensions || 1;
 		if(o.points)
 		{
 			this.points = o.points;
+			var dimensions = o.properties.dimensions;
 
-			//legacy
+			//error checking from legacy
 			for(var i = 0;i < this.points.length; ++i)
 			{
 				var p = this.points[i];
 				if(p.weights && p.weights.constructor !== Object)
 					p.weights = {};
+				for(var j in p.weights)
+				{
+					if( p.weights[j].constructor == Number && dimensions != 1)
+						p.weights[j] = 0;
+					else if (p.weights[j].constructor !== Array && dimensions > 1)
+						p.weights[j] = new Array(dimensions).fill(0);
+				}
 			}
 
 			//widget
@@ -24374,15 +24644,37 @@ if(typeof(LiteGraph) != "undefined")
 		inspector.addSeparator();
 		inspector.addTitle("Weights");
 
-		for(var i in this.current_weights)
+		var dimensions = this.properties.dimensions || 1;
+		var type = null;
+		switch(dimensions)
 		{
-			inspector.addNumber( i, this.current_weights[i], { name_width: "80%", index: i, callback: function(v){
-				node.current_weights[ this.options.index ] = v;
-			}});
+			case 2: type = "vec2"; break;
+			case 3: type = "vec3"; break;
+			case 4: type = "vec4"; break;
+			default: type = "number"; break;
 		}
 
+		inspector.widgets_per_row = 2;
+		if(type)
+		for(var i in this.current_weights)
+		{
+			var name = i;
+			inspector.add( type, name, this.current_weights[ name ], { width: "calc(100% - 40px)", name_width: "80%", index: name, callback: function(v){
+				node.current_weights[ name ] = v;
+			}});
+			inspector.addButton( null, InterfaceModule.icons.trash, { width: 30, index: name, callback: function(v){
+				var name = this.options.index;
+				LiteGUI.confirm("Are you sure? It will be removed from all points", function(v){
+					if(v)
+						node.removeWeight( name );
+					inspector.refresh();
+				});
+			}});
+		}
+		inspector.widgets_per_row = 1;
+
 		inspector.addStringButton("Add Weight","", { button: "+", callback_button: function(v){
-			node.current_weights[v] = 0;
+			node.current_weights[v] = dimensions == 1 ? 1 : new Array(dimensions).fill(0);
 			inspector.refresh();
 		}});
 
@@ -24391,8 +24683,16 @@ if(typeof(LiteGraph) != "undefined")
 
     LGraphRemapWeights.prototype.onGetOutputs = function() {
         var r = [["selected","string"]];
+		var type = null;
+		switch(this.properties.dimensions)
+		{
+			case 2: type = "vec2"; break;
+			case 3: type = "vec3"; break;
+			case 4: type = "vec4"; break;
+			default: type = "number"; break;
+		}
 		for(var i in this.current_weights)
-			r.push([i,"number"]);
+			r.push([i,type]);
 		return r;
     };
 
@@ -24404,6 +24704,35 @@ if(typeof(LiteGraph) != "undefined")
 	LiteGraph.registerNodeType("math/remap_weights", LGraphRemapWeights );
 
 	//******************************************
+
+	function LGraphCameraRay()
+	{
+		this.addInput("camera","component,camera");
+		this.addInput("pos2D","vec2");
+		this.addOutput("ray","ray");
+		this.properties = {
+			reverse_y: false
+		};
+		this._ray = new LS.Ray();
+	}
+
+	LGraphCameraRay.title = "Camera Ray";
+
+	LGraphCameraRay.prototype.onExecute = function()
+	{
+		var camera = this.getInputData(0) || LS.Renderer.getCurrentCamera();
+		var pos = this.getInputData(1);
+		if(!camera || camera.constructor != LS.Camera || !pos)
+			return;
+		var viewport = null;
+		var y = pos[1];
+		if( this.properties.reverse_y )
+			y = gl.canvas.height - pos[1];
+		camera.getRay( pos[0], y, viewport, false, this._ray );
+		this.setOutputData(0, this._ray);
+	}
+
+	LiteGraph.registerNodeType("math3d/camera_ray", LGraphCameraRay );
 
 	function LGraphCameraProject()
 	{
@@ -24441,6 +24770,89 @@ if(typeof(LiteGraph) != "undefined")
 	}
 
 	LiteGraph.registerNodeType("math3d/camera_project", LGraphCameraProject );
+
+	//*****************************
+
+	function LGraphRayPlaneTest()
+	{
+		this.addInput("ray","ray");
+		this.addInput("P","vec3");
+		this.addInput("N","vec3");
+		this.addOutput("pos","vec3");
+		this.properties = {};
+	}
+
+	LGraphRayPlaneTest.title = "Ray-Plane test";
+
+	LGraphRayPlaneTest.prototype.onExecute = function()
+	{
+		var ray = this.getInputData(0);
+		var p = this.getInputData(1);
+		var n = this.getInputData(2);
+		if(!ray || ray.constructor != LS.Ray )
+			return;
+		if(!p)
+			p = LS.ZEROS;
+		if(!n)
+			n = LS.TOP;
+		var r = ray.testPlane(p,n);
+		this.setOutputData( 0, ray.collision_point );
+	}
+
+	LiteGraph.registerNodeType("math3d/rayplane-test", LGraphRayPlaneTest );
+
+
+	function LGraphRayCollidersTest()
+	{
+		this.addInput("enabled","boolean");
+		this.addInput("ray","ray");
+		this.addOutput("collides","boolean");
+		this.addOutput("node","scenenode");
+		this.addOutput("pos","vec3");
+		this.addOutput("normal","vec3");
+		this.properties = { max_dist: 1000, layers: 0xFF, mode: 0 };
+		this.options = {};
+	}
+
+	LGraphRayCollidersTest.COLLIDERS = 0;
+	LGraphRayCollidersTest.RENDERINSTANCES_BOUNDING = 1;
+	LGraphRayCollidersTest.RENDERINSTANCES_MESH = 2;
+
+	LGraphRayCollidersTest.title = "Ray-Colliders test";
+	LGraphRayCollidersTest["@layers"] = { widget:"layers" };
+	LGraphRayCollidersTest["@mode"] = { type:"enum", values: { "colliders": LGraphRayCollidersTest.COLLIDERS, "renderInstance_bounding": LGraphRayCollidersTest.RENDERINSTANCES_BOUNDING, "renderInstance_mesh": LGraphRayCollidersTest.RENDERINSTANCES_MESH } };
+
+	LGraphRayCollidersTest.prototype.onExecute = function()
+	{
+		var enabled = this.getInputData(0);
+		var ray = this.getInputData(1);
+		if(enabled === false || enabled === 0 || enabled === null || !ray || ray.constructor != LS.Ray )
+			return;
+		var options = this.options;
+		options.max_dist = this.properties.max_dist;
+		options.normal = this.isInputConnected(3);
+		options.layers = this.properties.layers;
+		options.triangle_collision = this.properties.mode == LGraphRayCollidersTest.RENDERINSTANCES_MESH;
+			
+		var collisions = null;
+		if(this.properties.mode == LGraphRayCollidersTest.COLLIDERS)
+			collisions = LS.Physics.raycast( ray.origin, ray.direction, options );
+		else 
+			collisions = LS.Physics.raycastRenderInstances( ray.origin, ray.direction, options );
+
+		if( collisions && collisions.length )
+		{
+			var coll = collisions[0];
+			this.setOutputData( 0, true );
+			this.setOutputData( 1, coll.node );
+			this.setOutputData( 2, coll.position );
+			this.setOutputData( 3, coll.normal );
+		}
+		else
+			this.setOutputData( 0, false );
+	}
+
+	LiteGraph.registerNodeType("math3d/raycolliders-test", LGraphRayCollidersTest );
 
 	//*********************************************
 
@@ -25972,7 +26384,7 @@ if(typeof(LiteGraph) != "undefined")
 		this.addInput("in","vec3"); //optional
 		this.addOutput("out","vec3");
 		this.properties = {
-			world_space: true,
+			world_space: true
 		};
 		this.addWidget("toggle","world space",true,"world_space");
 	}
@@ -29841,7 +30253,7 @@ var COLOR_PASS = LS.COLOR_PASS = { name: "color", id: 1 };
 var SHADOW_PASS = LS.SHADOW_PASS = { name: "shadow", id: 2 };
 var PICKING_PASS = LS.PICKING_PASS = { name: "picking", id: 3 };
 
-//events
+//render events
 EVENT.BEFORE_RENDER = "beforeRender";
 EVENT.READY_TO_RENDER = "readyToRender";
 EVENT.RENDER_SHADOWS = "renderShadows";
@@ -30124,7 +30536,7 @@ var Renderer = {
 		this.processVisibleData( scene, render_settings, cameras );
 
 		//Define the main camera, the camera that should be the most important (used for LOD info, or shadowmaps)
-		cameras = cameras && cameras.length ? cameras : this._visible_cameras;
+		cameras = cameras && cameras.length ? cameras : scene._cameras;//this._visible_cameras;
 		if(cameras.length == 0)
 			throw("no cameras");
 		this._visible_cameras = cameras; //the cameras being rendered
@@ -30354,6 +30766,7 @@ var Renderer = {
 
 		//set as the current camera
 		this._current_camera = camera;
+		LS.Camera.current = camera;
 
 		//Draw allows to render debug info easily
 		if(LS.Draw)
@@ -31798,6 +32211,9 @@ DebugRender.prototype.renderGrid = function()
 	else
 	{
 		//texture grid
+		gl.enable( gl.POLYGON_OFFSET_FILL );
+		gl.depthFunc( gl.LEQUAL );
+		gl.polygonOffset(1,-100.0);
 		gl.enable(gl.BLEND);
 		this.grid_texture.bind(0);
 		gl.depthMask( false );
@@ -31806,6 +32222,9 @@ DebugRender.prototype.renderGrid = function()
 		LS.Draw.scale( 10000, 10000, 10000 );
 		LS.Draw.renderMesh( this.plane_mesh, gl.TRIANGLES, settings.grid_plane == "xy" ? this.grid_shader_xy : (settings.grid_plane == "yz" ? this.grid_shader_yz : this.grid_shader) );
 		gl.depthMask( true );
+		gl.depthFunc( gl.LESS );
+		gl.disable( gl.POLYGON_OFFSET_FILL );
+		gl.polygonOffset(0,0);
 	}
 
 	LS.Draw.pop();
@@ -31844,6 +32263,11 @@ DebugRender.prototype.renderColliders = function( scene )
 		{
 			LS.Draw.translate( BBox.getCenter(oobb) );
 			LS.Draw.renderWireBox( halfsize[0]*2, halfsize[1]*2, halfsize[2]*2 );
+		}
+		else if(instance.type == LS.PhysicsInstance.PLANE)
+		{
+			LS.Draw.translate( BBox.getCenter(oobb) );
+			LS.Draw.renderWireBox( halfsize[0]*2, 0.0001, halfsize[2]*2 );
 		}
 		else if(instance.type == LS.PhysicsInstance.SPHERE)
 		{
@@ -31886,7 +32310,7 @@ DebugRender.prototype.renderPaths = function( scene )
 DebugRender.prototype.createMeshes = function()
 {
 	//plane
-	this.plane_mesh = GL.Mesh.plane({xz:true});
+	this.plane_mesh = GL.Mesh.plane({xz:true, detail: 10});
 
 	//grid
 	var dist = 10;
@@ -34251,7 +34675,7 @@ var Physics = {
 	* @param {vec3} origin in world space
 	* @param {vec3} direction in world space
 	* @param {Object} options ( max_dist maxium distance, layers which layers to check, scene, first_collision )
-	* @return {Array} Array of Collision objects containing all the nodes that collided with the ray or null in the form [SceneNode, Collider, collision point, distance]
+	* @return {Array} Array of Collision objects containing all the nodes that collided with the ray or null in the form of a LS.Collision
 	*/
 	raycast: function( origin, direction, options )
 	{
@@ -34281,7 +34705,7 @@ var Physics = {
 		//for every instance
 		for(var i = 0; i < colliders.length; ++i)
 		{
-			var instance = colliders[i];
+			var instance = colliders[i]; //of LS.Collider
 
 			if( (layers & instance.layers) === 0 )
 				continue;
@@ -34302,6 +34726,15 @@ var Physics = {
 					continue;
 				if(compute_normal)
 					collision_normal = vec3.sub( vec3.create(), collision_point, instance.center );
+			}
+			else if( instance.type == PhysicsInstance.PLANE )
+			{
+				var N = vec3.fromValues(0,1,0);
+				mat4.rotateVec3( N, model, N );
+				if(!geo.testRayPlane( origin, direction, instance.center, N, collision_point, max_distance))
+					continue;
+				if(compute_normal)
+					collision_normal = N;
 			}
 			else //the rest test first with the local BBox
 			{
@@ -35801,15 +36234,32 @@ Transform.prototype.orientTo = (function() {
 	var temp_front = vec3.create();
 	var temp_right = vec3.create();
 	var temp_top = vec3.create();
+	var temp_pos = vec3.create();
 	//function
 	return function( pos, in_world, top, iterative_method )
 	{
 		top = top || LS.TOP;
 		//convert to local space
+		/*
 		if(in_world && this._parent)
+		{
 			this._parent.globalToLocal( pos, temp_front );
+		}
 		else
 			temp_front.set( pos );
+		*/
+
+		if(in_world)
+		{
+			this.getGlobalPosition( temp_pos );
+			vec3.sub( temp_front, pos, temp_pos );
+		}
+		else
+			temp_front.set( pos );
+
+		vec3.scale( temp_front,temp_front,-1); //reverse?
+
+		//vec3.sub( temp_front, temp_pos, temp_front );
 		vec3.normalize( temp_front, temp_front );
 		if(iterative_method)
 		{
@@ -36318,6 +36768,9 @@ function Camera(o)
 
 Camera.icon = "mini-icon-camera.png";
 
+Camera.main = null; //to store the main camera of the scene
+Camera.current = null; //to store the current camera
+
 Camera.PERSPECTIVE = 1;
 Camera.ORTHOGRAPHIC = 2; //orthographic adapted to aspect ratio of viewport
 Camera.ORTHO2D = 3; //orthographic with manually defined left,right,top,bottom
@@ -36794,11 +37247,20 @@ Camera.prototype.onRemovedFromNode = function(node)
 
 Camera.prototype.onAddedToScene = function(scene)
 {
+	if(!LS.Camera.main)
+		LS.Camera.main = this;
 	LEvent.bind( scene, "collectCameras", this.onCollectCameras, this ); //here because we store them in node
 }
 
 Camera.prototype.onRemovedFromScene = function(scene)
 {
+	if(LS.Camera.main == this)
+	{
+		var cams = scene.root.findComponents("Camera");
+		if(cams && cams.length)
+			LS.Camera.main = cams[0];
+	}
+
 	LEvent.unbind( scene, "collectCameras", this.onCollectCameras, this );
 
 	if(this._frame) //free memory
@@ -39692,7 +40154,11 @@ Object.defineProperty( MorphDeformer.prototype, "name_weights", {
 		{
 			var m = this.morph_targets[i];
 			if(v[m.mesh] !== undefined)
-				m.weight = Number(v[m.mesh]);
+			{
+				var weight = Number(v[m.mesh]);
+				if(!isNaN(weight))	
+					m.weight = weight;
+			}
 		}
 	},
 	get: function()
@@ -39945,8 +40411,8 @@ MorphDeformer.prototype.applyMorphUsingTextures = function( RI, valid_morphs )
 	//create the texture container where all will be merged
 	if(!this._morphtarget_vertices_texture || this._morphtarget_vertices_texture.height != base_vertices_buffer._texture.height )
 	{
-		this._morphtarget_vertices_texture = new GL.Texture( base_vertices_buffer._texture.width, base_vertices_buffer._texture.height, { format: gl.RGB, type: gl.FLOAT, filter: gl.NEAREST, wrap: gl.CLAMP_TO_EDGE, no_flip: true });
-		this._morphtarget_normals_texture = new GL.Texture( base_normals_buffer._texture.width, base_normals_buffer._texture.height, { format: gl.RGB, type: gl.FLOAT, filter: gl.NEAREST, wrap: gl.CLAMP_TO_EDGE, no_flip: true });
+		this._morphtarget_vertices_texture = new GL.Texture( base_vertices_buffer._texture.width, base_vertices_buffer._texture.height, { format: gl.RGB, type: gl.FLOAT, filter: gl.NEAREST, wrap: gl.CLAMP_TO_EDGE, no_flip: false });
+		this._morphtarget_normals_texture = new GL.Texture( base_normals_buffer._texture.width, base_normals_buffer._texture.height, { format: gl.RGB, type: gl.FLOAT, filter: gl.NEAREST, wrap: gl.CLAMP_TO_EDGE, no_flip: false });
 
 		//used in the shader
 		this._texture_size = vec4.fromValues( this._morphtarget_vertices_texture.width, this._morphtarget_vertices_texture.height, 
@@ -40248,7 +40714,7 @@ MorphDeformer.prototype.createGeometryTexture = function( data_buffer, texture )
 	var buffer_padded = new Float32Array( width * height * 3 );
 	buffer_padded.set( stream_data );
 	if(!texture || texture.width != width || texture.height != height )
-		texture = new GL.Texture( width, height, { format: gl.RGB, type: gl.FLOAT, filter: gl.NEAREST, wrap: gl.CLAMP_TO_EDGE, pixel_data: buffer_padded, no_flip: true });
+		texture = new GL.Texture( width, height, { format: gl.RGB, type: gl.FLOAT, filter: gl.NEAREST, wrap: gl.CLAMP_TO_EDGE, pixel_data: buffer_padded, no_flip: false });
 	else
 		texture.uploadData( buffer_padded );
 	return texture;
@@ -40323,9 +40789,38 @@ MorphDeformer.prototype.setMorphMesh = function(index, value)
 */
 MorphDeformer.prototype.setMorphWeight = function(index, value)
 {
-	if(index >= this.morph_targets.length)
+	if( index >= this.morph_targets.length || isNaN(value) )
 		return;
 	this.morph_targets[index].weight = value;
+}
+
+MorphDeformer.prototype.getPrettyName = function( info, locator, locator_path )
+{
+	//console.log(locator_path);
+	if(locator_path[ locator_path.length - 1 ] == "weight")
+	{
+		var names = this.morph_targets.map(function(a){return a.mesh;});
+		names = MorphDeformer.removeSharedString(names); //remove part
+		var index = this.morph_targets.indexOf( info.target );
+		if(index != -1)
+		{
+			var name = names[index].replace(/_/g," ");
+			return info.node.name + "::" + name;
+		}
+	}
+}
+
+MorphDeformer.removeSharedString = function(array)
+{
+	var n = computeSharedInitialString(array);
+	array = array.map(function(a){ 
+		a = a.substr(n);
+		var last = a.lastIndexOf(".");
+		if(last != -1)
+			return a.substr(0,last);
+		return a;
+	});
+	return array;
 }
 
 MorphDeformer.prototype.getPropertyInfoFromPath = function( path )
@@ -40350,6 +40845,7 @@ MorphDeformer.prototype.getPropertyInfoFromPath = function( path )
 
 	return {
 		node: this._root,
+		component: this,
 		target: this.morph_targets[num],
 		name: varname,
 		value: this.morph_targets[num][ varname ] !== undefined ? this.morph_targets[num][ varname ] : null,
@@ -40362,6 +40858,9 @@ MorphDeformer.prototype.setPropertyValueFromPath = function( path, value, offset
 	offset = offset || 0;
 
 	if( path.length < (offset+1) )
+		return;
+
+	if(isNaN(value))
 		return;
 
 	if( path[offset] != "morphs" )
@@ -40385,10 +40884,13 @@ MorphDeformer.prototype.setProperty = function(name, value)
 		name = name.substr(5);
 		var t = name.split("_");
 		var num = parseInt( t[0] );
-		if( num < this.morph_targets.length )
+		if( num >= 0 && num < this.morph_targets.length )
 		{
 			if( t[1] == "weight" )
-				this.morph_targets[ num ].weight = value;
+			{
+				if(!isNaN(value)) //this happened some times...
+					this.morph_targets[ num ].weight = value;
+			}
 			else if( t[1] == "mesh" )
 				this.morph_targets[ num ].mesh = value;
 		}
@@ -41512,21 +42014,20 @@ Skybox.prototype.onCollectInstances = function(e, instances)
 		else
 			mat.color.set([this.intensity, this.intensity, this.intensity]);
 
-		mat.setProperty( "Texture", texture_name );
-
-		/*
-		var sampler = mat.setTexture( LS.Material.COLOR, texture_name );
-		//sampler.gamma = this.gamma;
-		if(texture && texture.texture_type == gl.TEXTURE_2D)
+		var texture = LS.RM.textures[ texture_name ];
+		if(texture)
 		{
-			sampler.uvs = "polar_vertex";
-			texture.bind(0);
-			texture.setParameter( gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE ); //to avoid going up
-			texture.setParameter( gl.TEXTURE_MIN_FILTER, gl.LINEAR ); //avoid ugly error in atan2 edges
+			if(texture.texture_type == GL.TEXTURE_2D)
+			{
+				mat._uniforms.u_tex_type = 0;
+				mat.setProperty( "texture2D", texture_name );
+			}
+			else
+			{
+				mat._uniforms.u_tex_type = 1;
+				mat.setProperty( "textureCube", texture_name );
+			}
 		}
-		else
-			sampler.uvs = "0";
-		*/
 	}
 
 	RI.setMesh( mesh );
@@ -41581,18 +42082,18 @@ Skybox.prototype.bakeToCubemap = function( size, render_settings )
 
 Skybox.shader_code = "\n\
 \\js\n\
-	this.createSampler(\"Texture\",\"u_color_texture\", { magFilter: GL.LINEAR, missing: \"white\"} );\n\
+	this.createSampler(\"texture2D\",\"u_color_texture\", { magFilter: GL.LINEAR, missing: \"white\"} );\n\
+	this.createSampler(\"textureCube\",\"u_color_cubemap\", { magFilter: GL.LINEAR, missing: \"white\"} );\n\
 	this.queue = LS.RenderQueue.BACKGROUND;\n\
 	this.render_state.cull_face = false;\n\
 	this.render_state.front_face = GL.CW;\n\
 	this.render_state.depth_test = false;\n\
-	this.render_state.front_face = GL.CW;\n\
 	this.flags.ignore_frustum = true;\n\
 	this.flags.ignore_lights = true;\n\
 	this.flags.cast_shadows = false;\n\
 	this.flags.receive_shadows = false;\n\
 \n\
-\\color.vs\n\
+\\default.vs\n\
 	precision mediump float;\n\
 	attribute vec3 a_vertex;\n\
 	varying vec3 v_world_position;\n\
@@ -41603,35 +42104,26 @@ Skybox.shader_code = "\n\
 		v_world_position = vertex4.xyz;\n\
 		gl_Position = u_viewprojection * vertex4;\n\
 	}\n\
-\\color.fs\n\
+\\default.fs\n\
 	precision mediump float;\n\
 	varying vec3 v_world_position;\n\
 	uniform vec4 u_material_color;\n\
 	uniform vec3 u_camera_eye;\n\
-	uniform samplerCube u_color_texture;\n\
+	uniform int u_tex_type;\n\
+	uniform samplerCube u_color_cubemap;\n\
+	uniform sampler2D u_color_texture;\n\
 	vec2 polarToCartesian(in vec3 V)\n\
 	{\n\
 		return vec2( 0.5 - (atan(V.z, V.x) / -6.28318531), asin(V.y) / 1.57079633 * 0.5 + 0.5);\n\
 	}\n\
 	void main() {\n\
 		vec3 E = normalize( v_world_position - u_camera_eye);\n\
-		vec4 color = textureCube( u_color_texture, E );\n\
+		vec4 color;\n\
+		if( u_tex_type == 0 )\n\
+			color = texture2D( u_color_texture, polarToCartesian(E) );\n\
+		else\n\
+			color = textureCube( u_color_cubemap, E );\n\
 		gl_FragColor = u_material_color * color;\n\
-	}\n\
-\\picking.vs\n\
-	precision mediump float;\n\
-	attribute vec3 a_vertex;\n\
-	uniform mat4 u_model;\n\
-	uniform mat4 u_viewprojection;\n\
-	void main() {\n\
-		vec4 vertex4 = vec4(a_vertex,1.0);\n\
-		gl_Position = (u_viewprojection * u_model) * vertex4;\n\
-	}\n\
-\\picking.fs\n\
-	precision mediump float;\n\
-	uniform vec4 u_material_color;\n\
-	void main() {\n\
-		gl_FragColor = u_material_color;\n\
 	}\n\
 ";
 
@@ -41764,6 +42256,7 @@ function Collider(o)
 
 Collider.icon = "mini-icon-collider.png";
 
+Collider.PLANE = LS.PhysicsInstance.PLANE;
 Collider.BOX = LS.PhysicsInstance.BOX;
 Collider.SPHERE = LS.PhysicsInstance.SPHERE;
 Collider.MESH = LS.PhysicsInstance.MESH;
@@ -41772,7 +42265,7 @@ Collider.MESH = LS.PhysicsInstance.MESH;
 Collider["@size"] = { type: "vec3", step: 0.01 };
 Collider["@center"] = { type: "vec3", step: 0.01 };
 Collider["@mesh"] = { type: "mesh" };
-Collider["@shape"] = { type:"enum", values: {"Box": Collider.BOX, "Sphere": Collider.SPHERE, "Mesh": Collider.MESH }};
+Collider["@shape"] = { type:"enum", values: {"Plane":Collider.PLANE, "Box": Collider.BOX, "Sphere": Collider.SPHERE, "Mesh": Collider.MESH }};
 
 //Collider["@adjustToNodeBounding"] = { type:"action" };
 
@@ -41862,6 +42355,11 @@ Collider.prototype.onGetColliders = function(e, colliders)
 		else
 			BBox.setCenterHalfsize( PI.oobb, this.center, this.size);
 	}
+	else if(PI.type === LS.PhysicsInstance.PLANE)
+	{
+		this.size[1] = 0.0001; //flatten
+		BBox.setCenterHalfsize( PI.oobb, this.center, this.size );
+	}
 
 	if(mesh)
 		vec3.copy( PI.center, BBox.getCenter( mesh.bounding ) );
@@ -41881,6 +42379,7 @@ Collider.prototype.onGetColliders = function(e, colliders)
 	colliders.push(PI);
 }
 
+//rendered from LS.DebugRender.prototype.renderColliders
 
 LS.registerComponent( Collider );
 ///@FILE:../src/components/customData.js
@@ -43258,18 +43757,18 @@ CameraController["@mouse_wheel_action"] = { type:"enum", values: CameraControlle
 
 CameraController.prototype.onAddedToScene = function( scene )
 {
-	LEvent.bind( scene, "start",this.onStart,this);
-	LEvent.bind( scene, "finish",this.onFinish,this);
-	LEvent.bind( scene, "mousedown",this.onMouse,this);
-	LEvent.bind( scene, "mousemove",this.onMouse,this);
-	LEvent.bind( scene, "mousewheel",this.onMouse,this);
-	LEvent.bind( scene, "touchstart",this.onTouch,this);
-	LEvent.bind( scene, "touchmove",this.onTouch,this);
-	LEvent.bind( scene, "touchend",this.onTouch,this);
-	LEvent.bind( scene, "keydown",this.onKey,this);
-	LEvent.bind( scene, "keyup",this.onKey,this);
-	LEvent.bind( scene, "update",this.onUpdate,this);
-	LEvent.bind( scene, "renderGUI",this.onRenderGUI,this);
+	LEvent.bind( scene, LS.EVENT.START,this.onStart,this);
+	LEvent.bind( scene, LS.EVENT.FINISH,this.onFinish,this);
+	LEvent.bind( scene, LS.EVENT.MOUSEDOWN,this.onMouse,this);
+	LEvent.bind( scene, LS.EVENT.MOUSEMOVE,this.onMouse,this);
+	LEvent.bind( scene, LS.EVENT.MOUSEWHEEL,this.onMouse,this);
+	LEvent.bind( scene, LS.EVENT.TOUCHSTART,this.onTouch,this);
+	LEvent.bind( scene, LS.EVENT.TOUCHMOVE,this.onTouch,this);
+	LEvent.bind( scene, LS.EVENT.TOUCHEND,this.onTouch,this);
+	LEvent.bind( scene, LS.EVENT.KEYDOWN,this.onKey,this);
+	LEvent.bind( scene, LS.EVENT.KEYUP,this.onKey,this);
+	LEvent.bind( scene, LS.EVENT.UPDATE,this.onUpdate,this);
+	LEvent.bind( scene, LS.EVENT.RENDERGUI,this.onRenderGUI,this);
 }
 
 CameraController.prototype.onRemovedFromScene = function( scene )
@@ -44286,7 +44785,7 @@ GeometricPrimitive.prototype.updateMesh = function()
 	switch (this._geometry)
 	{
 		case GeometricPrimitive.CUBE: 
-			this._mesh = GL.Mesh.cube({size: this.size, normals:true,coords:true});
+			this._mesh = GL.Mesh.cube({size: this.size, normals:true,coords:true, wireframe: true});
 			break;
 		case GeometricPrimitive.PLANE:
 			this._mesh = GL.Mesh.plane({size: this.size, xz: true, detail: subdivisions, normals:true,coords:true});
@@ -44425,7 +44924,7 @@ Object.defineProperty( GlobalInfo.prototype, 'render_settings', {
 	enumerable: true
 });
 
-
+//called when updating the coefficients from the editor
 GlobalInfo.prototype.computeIrradiance = function( position, near, far, background_color )
 {
 	if(!LS.Components.IrradianceCache)
@@ -44464,7 +44963,7 @@ GlobalInfo.prototype.onRemovedFromScene = function(scene)
 
 GlobalInfo.prototype.fillSceneUniforms = function()
 {
-	if(this.irradiance && 0)
+	if(this.irradiance && 1)
 	{
 		if(!this._irradiance_final)
 			this._irradiance_final = new Float32Array( this.irradiance.length );
@@ -44807,37 +45306,38 @@ GraphComponent.prototype.onRemovedFromNode = function(node)
 GraphComponent.prototype.onAddedToScene = function( scene )
 {
 	this._graph._scene = scene;
-	LEvent.bind( scene , "init", this.onSceneEvent, this );
-	LEvent.bind( scene , "start", this.onSceneEvent, this );
-	LEvent.bind( scene , "pause", this.onSceneEvent, this );
-	LEvent.bind( scene , "unpause", this.onSceneEvent, this );
-	LEvent.bind( scene , "finish", this.onSceneEvent, this );
-	LEvent.bind( scene , "beforeRenderMainPass", this.onSceneEvent, this );
-	LEvent.bind( scene , "beforeRenderScene", this.onSceneEvent, this );
-	LEvent.bind( scene , "afterRenderScene", this.onSceneEvent, this );
-	LEvent.bind( scene , "update", this.onSceneEvent, this );
-	LEvent.bind( scene , "renderGUI", this.onRenderGUI, this );
-	LEvent.bind( scene, "mousedown", this.onMouse, this );
-	LEvent.bind( scene, "mousemove", this.onMouse, this );
-	LEvent.bind( scene, "mouseup", this.onMouse, this );
+
+	LEvent.bind( scene, LS.EVENT.INIT, this.onSceneEvent, this );
+	LEvent.bind( scene, LS.EVENT.START, this.onSceneEvent, this );
+	LEvent.bind( scene, LS.EVENT.PAUSE, this.onSceneEvent, this );
+	LEvent.bind( scene, LS.EVENT.UNPAUSE, this.onSceneEvent, this );
+	LEvent.bind( scene, LS.EVENT.FINISH, this.onSceneEvent, this );
+	LEvent.bind( scene, LS.EVENT.BEFORE_RENDER_MAIN_PASS, this.onSceneEvent, this );
+	LEvent.bind( scene, LS.EVENT.BEFORE_RENDER_SCENE, this.onSceneEvent, this );
+	LEvent.bind( scene, LS.EVENT.AFTER_RENDER_SCENE, this.onSceneEvent, this );
+	LEvent.bind( scene, LS.EVENT.UPDATE, this.onSceneEvent, this );
+	LEvent.bind( scene, LS.EVENT.RENDER_GUI, this.onRenderGUI, this );
+	LEvent.bind( scene, LS.EVENT.MOUSEDOWN, this.onMouse, this );
+	LEvent.bind( scene, LS.EVENT.MOUSEMOVE, this.onMouse, this );
+	LEvent.bind( scene, LS.EVENT.MOUSEUP, this.onMouse, this );
 }
 
 GraphComponent.prototype.onRemovedFromScene = function( scene )
 {
 	this._graph._scene = null;
-	LEvent.unbind( scene, "init", this.onSceneEvent, this );
-	LEvent.unbind( scene, "start", this.onSceneEvent, this );
-	LEvent.unbind( scene, "pause", this.onSceneEvent, this );
-	LEvent.unbind( scene, "unpause", this.onSceneEvent, this );
-	LEvent.unbind( scene, "finish", this.onSceneEvent, this );
-	LEvent.unbind( scene, "beforeRenderMainPass", this.onSceneEvent, this );
-	LEvent.unbind( scene, "beforeRenderScene", this.onSceneEvent, this );
-	LEvent.unbind( scene, "afterRenderScene", this.onSceneEvent, this );
-	LEvent.unbind( scene, "update", this.onSceneEvent, this );
-	LEvent.unbind( scene, "renderGUI", this.onRenderGUI, this );
-	LEvent.unbind( scene, "mousedown", this.onMouse, this );
-	LEvent.unbind( scene, "mousemove", this.onMouse, this );
-	LEvent.unbind( scene, "mouseup", this.onMouse, this );
+	LEvent.unbind( scene, LS.EVENT.INIT, this.onSceneEvent, this );
+	LEvent.unbind( scene, LS.EVENT.START, this.onSceneEvent, this );
+	LEvent.unbind( scene, LS.EVENT.PAUSE, this.onSceneEvent, this );
+	LEvent.unbind( scene, LS.EVENT.UNPAUSE, this.onSceneEvent, this );
+	LEvent.unbind( scene, LS.EVENT.FINISH, this.onSceneEvent, this );
+	LEvent.unbind( scene, LS.EVENT.BEFORE_RENDER_MAIN_PASS, this.onSceneEvent, this );
+	LEvent.unbind( scene, LS.EVENT.BEFORE_RENDER_SCENE, this.onSceneEvent, this );
+	LEvent.unbind( scene, LS.EVENT.AFTER_RENDER_SCENE, this.onSceneEvent, this );
+	LEvent.unbind( scene, LS.EVENT.UPDATE, this.onSceneEvent, this );
+	LEvent.unbind( scene, LS.EVENT.RENDER_GUI, this.onRenderGUI, this );
+	LEvent.unbind( scene, LS.EVENT.MOUSEDOWN, this.onMouse, this );
+	LEvent.unbind( scene, LS.EVENT.MOUSEMOVE, this.onMouse, this );
+	LEvent.unbind( scene, LS.EVENT.MOUSEUP, this.onMouse, this );
 }
 
 GraphComponent.prototype.onResourceRenamed = function( old_name, new_name, resource )
@@ -44892,7 +45392,10 @@ GraphComponent.prototype.onSceneEvent = function( event_type, event_data )
 	}
 
 	if(this.on_event == event_type)
-		this.runGraph();
+	{
+		if(this._root._in_tree && this.enabled )// && this._root.visible )
+			this.runGraph();
+	}
 }
 
 GraphComponent.prototype.trigger = function(e)
@@ -44903,16 +45406,11 @@ GraphComponent.prototype.trigger = function(e)
 
 GraphComponent.prototype.runGraph = function()
 {
-	if(!this._root._in_tree || !this.enabled || !this._root.visible)
-		return;
-
-	//if(!this._graphcode || this._graphcode._version != this._graph_version )
-	//	this.processGraph();
-
 	if(this.from_file && !this._graphcode)
 		return;
 
 	this._graph.runStep( 1, LS.catch_exceptions );
+
 	if(this.force_redraw)
 		this._root.scene.requestFrame();
 }
@@ -45022,6 +45520,13 @@ GraphComponent.prototype.setPropertyValue = function( property, value )
 			n.properties.value = value;
 		return true;
 	}
+}
+
+GraphComponent.prototype.getActions = function( actions )
+{
+	actions = actions || {};
+	actions["runGraph"] = "function";
+	return actions;
 }
 
 GraphComponent.prototype.getComponentTitle = function()
@@ -45268,24 +45773,15 @@ FXGraphComponent.prototype.onRemovedFromNode = function(node)
 	//LEvent.unbind( LS.GlobalScene, "beforeRenderMainPass", this.onBeforeRender, this );
 }
 
-FXGraphComponent.prototype.onAddedToScene = function(scene)
-{
-	LEvent.bind( scene , "renderGUI", this.onRenderGUI, this );
-}
-
-FXGraphComponent.prototype.onRemovedFromScene = function(scene)
-{
-	LEvent.unbind( scene , "renderGUI", this.onRenderGUI, this );
-}
-
 FXGraphComponent.prototype.onAddedToScene = function( scene )
 {
 	if(!this._graph) //in case it wasnt connected
 		return;
 	this._graph._scene = scene;
-	LEvent.bind( scene, "beforeRender", this.onBeforeRender, this );
-	LEvent.bind( scene, "enableFrameContext", this.onEnableContext, this );
-	LEvent.bind( scene, "showFrameContext", this.onAfterRender, this );
+	LEvent.bind( scene, LS.EVENT.BEFORE_RENDER, this.onBeforeRender, this );
+	LEvent.bind( scene, LS.EVENT.ENABLE_FRAME_CONTEXT, this.onEnableContext, this );
+	LEvent.bind( scene, LS.EVENT.SHOW_FRAME_CONTEXT, this.onAfterRender, this );
+	LEvent.bind( scene , LS.EVENT.RENDER_GUI, this.onRenderGUI, this );
 }
 
 FXGraphComponent.prototype.onRemovedFromScene = function( scene )
@@ -45293,9 +45789,10 @@ FXGraphComponent.prototype.onRemovedFromScene = function( scene )
 	if(!this._graph) //in case it wasnt connected
 		return;
 	this._graph._scene = null;
-	LEvent.unbind( scene, "beforeRender", this.onBeforeRender, this );
-	LEvent.unbind( scene, "enableFrameContext", this.onEnableContext, this );
-	LEvent.unbind( scene, "showFrameContext", this.onAfterRender, this );
+	LEvent.unbind( scene, LS.EVENT.BEFORE_RENDER, this.onBeforeRender, this );
+	LEvent.unbind( scene, LS.EVENT.ENABLE_FRAME_CONTEXT, this.onEnableContext, this );
+	LEvent.unbind( scene, LS.EVENT.SHOW_FRAME_CONTEXT, this.onAfterRender, this );
+	LEvent.unbind( scene, LS.EVENT.RENDER_GUI, this.onRenderGUI, this );
 
 	LS.ResourcesManager.unregisterResource( ":color_" + this.uid );
 	LS.ResourcesManager.unregisterResource( ":depth_" + this.uid );
@@ -45393,33 +45890,39 @@ FXGraphComponent.prototype.showFBO = function()
 {
 	if(!this.enabled || !this._root.visible)
 		return;
-
 	this.frame.disable();
+	this.applyGraphToRenderFrameContext( this.frame );
+}
 
-	LS.ResourcesManager.textures[":color_" + this.uid] = this.frame._color_texture;
-	LS.ResourcesManager.textures[":depth_" + this.uid] = this.frame._depth_texture;
-	if(this.frame.num_extra_textures)
+FXGraphComponent.prototype.applyGraphToRenderFrameContext = function( frame )
+{
+	LS.ResourcesManager.textures[":color_" + this.uid] = frame._color_texture;
+	LS.ResourcesManager.textures[":depth_" + this.uid] = frame._depth_texture;
+	if(frame.num_extra_textures)
 	{
-		for(var i = 0; i < this.frame.num_extra_textures; ++i)
-			LS.ResourcesManager.textures[":extra"+ i +"_" + this.uid] = this.frame._textures[i+1];
+		for(var i = 0; i < frame.num_extra_textures; ++i)
+			LS.ResourcesManager.textures[":extra"+ i +"_" + this.uid] = frame._textures[i+1];
 	}
 
 	if(this.use_node_camera && this._viewport)
 	{
 		gl.setViewport( this._viewport );
-		this.applyGraph();
-		gl.setViewport( this.frame._fbo._old_viewport );
+		this.executeGraph( frame.filter_texture );
+		gl.setViewport( frame._fbo._old_viewport );
 	}
 	else
-		this.applyGraph();
+		this.executeGraph( frame.filter_texture );
 }
 
 
 //take the resulting textures and pass them through the graph
-FXGraphComponent.prototype.applyGraph = function()
+FXGraphComponent.prototype.executeGraph = function( filter_textures )
 {
 	if(!this._graph)
 		return;
+
+	if( filter_textures === undefined )
+		filter_textures = true;
 
 	if(!this._graph_frame_node)
 		this._graph_frame_node = this._graph.findNodesByTitle("Rendered Frame")[0];
@@ -45431,7 +45934,7 @@ FXGraphComponent.prototype.applyGraph = function()
 
 	if(this._graph_viewport_node) //force antialiasing
 	{
-		this._graph_viewport_node.properties.filter = this.frame.filter_texture;
+		this._graph_viewport_node.properties.filter = filter_textures;
 		this._graph_viewport_node.properties.antialiasing = this.use_antialiasing;
 	}
 
@@ -46946,6 +47449,7 @@ function PlayAnimation(o)
 
 	this._animation = "";
 	this._take = "default";
+	this.autoload = true;
 
 	/**
 	* the root node locator where to apply the animation, is none is specified it is applied using the scene root node
@@ -47181,13 +47685,18 @@ PlayAnimation.prototype.onUpdateAnimation = function(dt)
 	else if(time < start_time)
 		time = start_time;
 
+	//apply animation
 	this.applyAnimation( take, time, this._last_time );
+
+	LEvent.trigger( this._root, "after_animation" ); //to modify skeleton after applying an animation
+	if(this.onAfterAnimation)
+		this.onAfterAnimation(take, time);
 
 	this._last_time = time; //TODO, add support for pingpong events in tracks
 	//take.actionPerSample( this.current_time, this._processSample.bind( this ), { disabled_tracks: this.disabled_tracks } );
 
 	var scene = this._root.scene;
-	if(scene)
+	if(scene) //anims always force a new frame
 		scene.requestFrame();
 }
 
@@ -47257,9 +47766,10 @@ PlayAnimation.prototype.onUpdateBlendAnimation = function( dt )
 * returns the current animation or an animation with a given name
 * @method getAnimation
 * @param {String} name [optional] the name of the animation, if omited then uses the animation set in the component
+* @param {Bool} force_load [optional] if true and the animation is not loaded, it will be loaded
 * @return {LS.Animation} the animation container
 */
-PlayAnimation.prototype.getAnimation = function( name )
+PlayAnimation.prototype.getAnimation = function( name, force_load )
 {
 	name = name === undefined ? this.animation : name;
 
@@ -47267,6 +47777,8 @@ PlayAnimation.prototype.getAnimation = function( name )
 	if(!name || name[0] == "@") 
 		return scene.animation;
 	var anim = LS.ResourcesManager.getResource( name );
+	if(!anim && force_load)
+		LS.ResourcesManager.load( name );
 	if( anim && anim.constructor === LS.Animation )
 		return anim;
 	return null;
@@ -47314,6 +47826,8 @@ PlayAnimation.prototype.play = function()
 		console.error("cannot play an animation if the component doesnt belong to a node in a scene");
 
 	this.playing = true;
+
+	this.getAnimation(null,this.autoload); //force load
 
 	this.current_time = 0;
 	if(this.range)
@@ -49843,6 +50357,7 @@ Script.prototype.onAddedToScene = function( scene )
 	//avoid to parse it again
 	if(this._script && this._script._context && this._script._context._initialized )
 	{
+		this.hookEvents(); //because they were unbinded before
 		if(this._script._context.onBind)
 			this._script._context.onBind();
 		return;
@@ -52114,6 +52629,8 @@ function VideoPlayer(o)
 		this.configure(o);
 }
 
+VideoPlayer.icon = "mini-icon-video.png";
+
 Object.defineProperty( VideoPlayer.prototype, "enabled", {
 	set: function(v){
 		this._enabled = v;
@@ -53234,6 +53751,10 @@ if( !LS.Shaders.getShaderBlock("applyIrradiance") )
 * @constructor
 * @param {Object} options settings for the webgl context creation
 */
+
+EVENT.RENDER_LOADING = "render_loading";
+EVENT.FILEDROP = "fileDrop";
+
 function Player(options)
 {
 	options = options || {};
@@ -53666,7 +54187,7 @@ Player.prototype.enableLoadingBar = function()
 
 Player.prototype._onfiledrop = function( file, evt )
 {
-	return LEvent.trigger( LS.GlobalScene, "fileDrop", { file: file, event: evt } );
+	return LEvent.trigger( LS.GlobalScene, LS.EVENT.FILEDROP, { file: file, event: evt } );
 }
 
 Player.prototype.showPlayDialog = function()
@@ -53713,7 +54234,7 @@ Player.prototype._ondraw = function( force )
 	if(this.loading && this.loading.visible )
 	{
 		this.renderLoadingBar( this.loading );
-		LEvent.trigger( this.scene, "render_loading" );
+		LEvent.trigger( this.scene, LS.EVENT.RENDER_LOADING );
 		if(this.onDrawLoading)
 			this.onDrawLoading();
 	}
@@ -53986,7 +54507,7 @@ var parserOBJ = {
 					for(var i = 1; i < tokens.length; ++i)
 						polygon_indices.push( getIndex( tokens[i] ) );
 					group.indices.push( polygon_indices[0], polygon_indices[1], polygon_indices[2] );
-					//polygons are break intro triangles
+					//polygons are break intro triangles (assuming they are convex!)
 					for(var i = 2; i < polygon_indices.length-1; ++i)
 						group.indices.push( polygon_indices[0], polygon_indices[i], polygon_indices[i+1] );
 					break;
@@ -54397,6 +54918,7 @@ var parserTGA = {
 	type: 'image',
 	dataType:"arraybuffer",
 	format: 'binary',
+	skip_conversion: true,
 
 	parse: function(data, options)
 	{
